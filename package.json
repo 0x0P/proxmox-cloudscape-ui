@@ -3,20 +3,32 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev",
+    "dev:ws": "NODE_TLS_REJECT_UNAUTHORIZED=0 bun run server/ws-relay.ts",
+    "dev:all": "NODE_TLS_REJECT_UNAUTHORIZED=0 bun run server/ws-relay.ts & NODE_TLS_REJECT_UNAUTHORIZED=0 next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_TLS_REJECT_UNAUTHORIZED=0 next start",
+    "start:ws": "NODE_TLS_REJECT_UNAUTHORIZED=0 bun run server/ws-relay.ts",
     "lint": "eslint"
   },
   "dependencies": {
+    "@cloudscape-design/board-components": "^3.0.167",
+    "@cloudscape-design/collection-hooks": "^1.0.90",
+    "@cloudscape-design/components": "^3.0.1274",
+    "@cloudscape-design/design-tokens": "^3.0.79",
+    "@cloudscape-design/global-styles": "^1.0.57",
     "next": "16.2.4",
+    "novnc": "github:novnc/noVNC",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@svgr/webpack": "^8.1.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
