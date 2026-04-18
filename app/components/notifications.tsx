@@ -100,10 +100,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           if (!res.ok) return;
           const json = await res.json();
           const status = json.data?.status;
+          const exitstatus = json.data?.exitstatus;
 
           if (status && status !== "running") {
             completed.push(task);
-            const ok = status === "OK" || (typeof status === "string" && status.startsWith("OK"));
+            const ok = exitstatus === "OK" || (typeof exitstatus === "string" && exitstatus.startsWith("OK"));
+            const displayContent = ok ? task.description : `${task.description}: ${exitstatus ?? status}`;
 
             setNotifications((prev) =>
               prev
@@ -112,16 +114,15 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                   {
                     id: `task-done-${++notificationId}`,
                     type: ok ? "success" : "error",
-                    content: `${task.description}: ${status}`,
+                    content: displayContent,
                     dismissible: true,
                     onDismiss: () => dismiss(`task-done-${notificationId}`),
                   },
                 ]),
             );
-
             setTimeout(() => {
               setNotifications((prev) =>
-                prev.filter((n) => n.content !== `${task.description}: ${status}`),
+                prev.filter((n) => n.content !== displayContent),
               );
             }, ok ? 5000 : 10000);
           }

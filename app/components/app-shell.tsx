@@ -28,6 +28,13 @@ function useBreadcrumbs(t: (key: string) => string) {
     "/storage": t("nav.storage"),
     "/storage/upload": t("nav.uploadIsoTemplate"),
     "/network": t("nav.network"),
+    "/backups": t("nav.backups"),
+    "/firewall": t("nav.firewall"),
+    "/cluster/options": t("nav.options"),
+    "/cluster/replication": t("nav.replication"),
+    "/cluster/ha": t("nav.highAvailability"),
+    "/permissions": t("nav.permissions"),
+    "/pools": t("nav.pools"),
     "/logs": t("nav.logs"),
     "/settings": t("nav.settings"),
   };
@@ -99,6 +106,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
         { type: "link", text: t("nav.storage"), href: "/storage" },
         { type: "link", text: t("nav.uploadIsoTemplate"), href: "/storage/upload" },
         { type: "link", text: t("nav.network"), href: "/network" },
+        { type: "link", text: t("nav.backups"), href: "/backups" },
+        { type: "link", text: t("nav.firewall"), href: "/firewall" },
       ],
     },
     {
@@ -116,6 +125,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
       text: t("nav.system"),
       defaultExpanded: true,
       items: [
+        { type: "link", text: t("nav.permissions"), href: "/permissions" },
+        { type: "link", text: t("nav.pools"), href: "/pools" },
         { type: "link", text: t("nav.logs"), href: "/logs" },
         { type: "link", text: t("nav.settings"), href: "/settings" },
       ],

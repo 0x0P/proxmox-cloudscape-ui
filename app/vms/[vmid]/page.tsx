@@ -6,6 +6,7 @@ import Alert from "@cloudscape-design/components/alert";
 import AreaChart from "@cloudscape-design/components/area-chart";
 import Box from "@cloudscape-design/components/box";
 import Button from "@cloudscape-design/components/button";
+import Checkbox from "@cloudscape-design/components/checkbox";
 import Flashbar, { type FlashbarProps } from "@cloudscape-design/components/flashbar";
 import FormField from "@cloudscape-design/components/form-field";
 import Header from "@cloudscape-design/components/header";
@@ -19,6 +20,7 @@ import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import Table, { type TableProps } from "@cloudscape-design/components/table";
 import Tabs, { type TabsProps } from "@cloudscape-design/components/tabs";
 import Textarea from "@cloudscape-design/components/textarea";
+import Toggle from "@cloudscape-design/components/toggle";
 import { useTranslation } from "@/app/lib/use-translation";
 
 interface ClusterVmResource {
@@ -75,6 +77,106 @@ interface VmDetailData {
   snapshots: VmSnapshot[];
   tasks: VmTask[];
 }
+
+interface NodeSummary {
+  node: string;
+  status: string;
+}
+
+interface ClusterNextId {
+  vmid?: number | string;
+}
+
+interface StorageSummary {
+  storage: string;
+  content?: string;
+}
+
+interface VmOptionsFormState {
+  boot: string;
+  onboot: boolean;
+  agent: boolean;
+  protection: boolean;
+  hotplug: string;
+  tablet: boolean;
+  localtime: boolean;
+}
+
+interface VmCloudInitFormState {
+  ciuser: string;
+  cipassword: string;
+  nameserver: string;
+  searchdomain: string;
+  sshkeys: string;
+  ipconfig0: string;
+  citype: string;
+}
+
+interface VmFirewallRule {
+  pos: number;
+  type?: string;
+  action?: string;
+  proto?: string;
+  source?: string;
+  dest?: string;
+  dport?: string;
+  comment?: string;
+  enable?: number | boolean;
+}
+
+interface VmFirewallOptions {
+  enable?: number | boolean;
+  dhcp?: number | boolean;
+  macfilter?: number | boolean;
+  policy_in?: string;
+  policy_out?: string;
+}
+
+interface VmFirewallRuleFormState {
+  type: string;
+  action: string;
+  proto: string;
+  source: string;
+  dest: string;
+  dport: string;
+  comment: string;
+  enable: boolean;
+}
+
+interface VmFirewallOptionsFormState {
+  enable: boolean;
+  dhcp: boolean;
+  macfilter: boolean;
+  policyIn: string;
+  policyOut: string;
+}
+
+interface VmBackupItem {
+  storage: string;
+  volid: string;
+  ctime?: number;
+  size?: number;
+  notes?: string;
+}
+
+const EMPTY_VM_FIREWALL_RULE_FORM: VmFirewallRuleFormState = {
+  type: "in",
+  action: "ACCEPT",
+  proto: "",
+  source: "",
+  dest: "",
+  dport: "",
+  comment: "",
+  enable: true,
+};
+
+const EMPTY_VM_FIREWALL_OPTIONS_FORM: VmFirewallOptionsFormState = {
+  enable: false,
+  dhcp: false,
+  macfilter: false,
+  policyIn: "DROP",
+  policyOut: "ACCEPT",
+};
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -140,6 +242,100 @@ function getConfigStringValue(value: VmConfigValue | null | undefined): string {
   return "";
 }
 
+function optionValue(option: SelectProps.Option | null): string {
+  return option?.value ?? "";
+}
+
+function interpolate(template: string, values: Record<string, string | number>) {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.replaceAll(`{${key}}`, String(value)),
+    template,
+  );
+}
+
+function isEnabled(value?: string | number | boolean | null) {
+  return value === 1 || value === true || value === "1";
+}
+
+function getTextValue(value?: string | null, fallback = "-") {
+  return value?.trim() ? value : fallback;
+}
+
+function decodeUrlValue(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function encodeFormBody(params: URLSearchParams) {
+  return {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+    },
+    body: params.toString(),
+  };
+}
+
+function buildVmOptionsForm(config: VmConfig): VmOptionsFormState {
+  return {
+    boot: getConfigStringValue(config.boot),
+    onboot: isEnabled(config.onboot),
+    agent: isEnabled(config.agent),
+    protection: isEnabled(config.protection),
+    hotplug: getConfigStringValue(config.hotplug),
+    tablet: isEnabled(config.tablet),
+    localtime: isEnabled(config.localtime),
+  };
+}
+
+function buildVmCloudInitForm(config: VmConfig): VmCloudInitFormState {
+  return {
+    ciuser: getConfigStringValue(config.ciuser),
+    cipassword: "",
+    nameserver: getConfigStringValue(config.nameserver),
+    searchdomain: getConfigStringValue(config.searchdomain),
+    sshkeys: decodeUrlValue(getConfigStringValue(config.sshkeys)),
+    ipconfig0: getConfigStringValue(config.ipconfig0),
+    citype: getConfigStringValue(config.citype) || "nocloud",
+  };
+}
+
+function buildVmFirewallRuleForm(rule: VmFirewallRule): VmFirewallRuleFormState {
+  return {
+    type: rule.type ?? "in",
+    action: rule.action ?? "ACCEPT",
+    proto: rule.proto ?? "",
+    source: rule.source ?? "",
+    dest: rule.dest ?? "",
+    dport: rule.dport ?? "",
+    comment: rule.comment ?? "",
+    enable: isEnabled(rule.enable),
+  };
+}
+
+function buildVmFirewallOptionsForm(options: VmFirewallOptions): VmFirewallOptionsFormState {
+  return {
+    enable: isEnabled(options.enable),
+    dhcp: isEnabled(options.dhcp),
+    macfilter: isEnabled(options.macfilter),
+    policyIn: options.policy_in ?? "DROP",
+    policyOut: options.policy_out ?? "ACCEPT",
+  };
+}
+
+function storageSupportsContent(storage: StorageSummary, contentType: string): boolean {
+  return (storage.content ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .includes(contentType);
+}
+
 function getDiskOptions(config: VmConfig): ReadonlyArray<SelectProps.Option> {
   return Object.entries(config)
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
@@ -197,14 +393,81 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
   const [resizeModalVisible, setResizeModalVisible] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [resizingDisk, setResizingDisk] = useState(false);
+  const [createSnapshotModalVisible, setCreateSnapshotModalVisible] = useState(false);
+  const [deleteSnapshotModalVisible, setDeleteSnapshotModalVisible] = useState(false);
+  const [rollbackSnapshotModalVisible, setRollbackSnapshotModalVisible] = useState(false);
+  const [migrateModalVisible, setMigrateModalVisible] = useState(false);
+  const [cloneModalVisible, setCloneModalVisible] = useState(false);
   const [editCores, setEditCores] = useState("");
   const [editSockets, setEditSockets] = useState("");
   const [editMemory, setEditMemory] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [selectedDisk, setSelectedDisk] = useState<SelectProps.Option | null>(null);
   const [diskSizeGb, setDiskSizeGb] = useState("");
+  const [snapshotName, setSnapshotName] = useState("");
+  const [snapshotDescription, setSnapshotDescription] = useState("");
+  const [snapshotVmState, setSnapshotVmState] = useState(false);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<VmSnapshot | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [migrateTargetNode, setMigrateTargetNode] = useState<SelectProps.Option | null>(null);
+  const [migrateOnline, setMigrateOnline] = useState(false);
+  const [migrateWithLocalDisks, setMigrateWithLocalDisks] = useState(true);
+  const [cloneNewId, setCloneNewId] = useState("");
+  const [cloneName, setCloneName] = useState("");
+  const [cloneTargetNode, setCloneTargetNode] = useState<SelectProps.Option | null>(null);
+  const [cloneTargetStorage, setCloneTargetStorage] = useState<SelectProps.Option | null>(null);
+  const [cloneFullClone, setCloneFullClone] = useState<SelectProps.Option | null>({
+    label: t("vms.fullClone"),
+    value: "full",
+  });
+  const [cloneDescription, setCloneDescription] = useState("");
+  const [migrateLoading, setMigrateLoading] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
+  const [migrateError, setMigrateError] = useState<string | null>(null);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [availableNodes, setAvailableNodes] = useState<ReadonlyArray<SelectProps.Option>>([]);
+  const [availableStorages, setAvailableStorages] = useState<ReadonlyArray<SelectProps.Option>>([]);
+  const [loadingNodes, setLoadingNodes] = useState(false);
+  const [loadingStorages, setLoadingStorages] = useState(false);
+  const [optionsModalVisible, setOptionsModalVisible] = useState(false);
+  const [cloudInitModalVisible, setCloudInitModalVisible] = useState(false);
+  const [optionsForm, setOptionsForm] = useState<VmOptionsFormState>(() => buildVmOptionsForm({}));
+  const [cloudInitForm, setCloudInitForm] = useState<VmCloudInitFormState>(() => buildVmCloudInitForm({}));
+  const [optionsSaving, setOptionsSaving] = useState(false);
+  const [cloudInitSaving, setCloudInitSaving] = useState(false);
+  const [optionsFormError, setOptionsFormError] = useState<string | null>(null);
+  const [cloudInitFormError, setCloudInitFormError] = useState<string | null>(null);
+  const [firewallRules, setFirewallRules] = useState<VmFirewallRule[]>([]);
+  const [firewallOptions, setFirewallOptions] = useState<VmFirewallOptions | null>(null);
+  const [firewallRulesLoading, setFirewallRulesLoading] = useState(false);
+  const [firewallOptionsLoading, setFirewallOptionsLoading] = useState(false);
+  const [firewallRulesError, setFirewallRulesError] = useState<string | null>(null);
+  const [firewallOptionsError, setFirewallOptionsError] = useState<string | null>(null);
+  const [firewallLoaded, setFirewallLoaded] = useState(false);
+  const [firewallSubmitting, setFirewallSubmitting] = useState(false);
+  const [firewallActionError, setFirewallActionError] = useState<string | null>(null);
+  const [firewallRuleEditorVisible, setFirewallRuleEditorVisible] = useState(false);
+  const [firewallDeleteRuleVisible, setFirewallDeleteRuleVisible] = useState(false);
+  const [firewallOptionsModalVisible, setFirewallOptionsModalVisible] = useState(false);
+  const [editingFirewallRule, setEditingFirewallRule] = useState<VmFirewallRule | null>(null);
+  const [firewallRuleForm, setFirewallRuleForm] = useState<VmFirewallRuleFormState>(EMPTY_VM_FIREWALL_RULE_FORM);
+  const [firewallRuleModalMode, setFirewallRuleModalMode] = useState<"create" | "edit">("create");
+  const [firewallOptionsForm, setFirewallOptionsForm] = useState<VmFirewallOptionsFormState>(EMPTY_VM_FIREWALL_OPTIONS_FORM);
+  const [backups, setBackups] = useState<VmBackupItem[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [backupsError, setBackupsError] = useState<string | null>(null);
+  const [backupsLoaded, setBackupsLoaded] = useState(false);
+  const [deleteBackupVisible, setDeleteBackupVisible] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState<VmBackupItem | null>(null);
+  const [backupDeleting, setBackupDeleting] = useState(false);
+  const [backupActionError, setBackupActionError] = useState<string | null>(null);
 
   const numericVmid = Number(vmid);
+
+  const addFlash = useCallback((item: FlashbarProps.MessageDefinition) => {
+    setFlashbarItems((current) => [item, ...current.filter((entry) => entry.id !== item.id)].slice(0, 5));
+  }, []);
 
   const loadVm = useCallback(async () => {
     if (!Number.isFinite(numericVmid)) {
@@ -259,6 +522,37 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
   const canStop = selectedStatus === "running" && !actionLoading;
   const canReboot = selectedStatus === "running" && !actionLoading;
   const canOpenConsole = selectedStatus === "running" && !actionLoading;
+  const cloneModeOptions = useMemo<ReadonlyArray<SelectProps.Option>>(
+    () => [
+      { label: t("vms.fullClone"), value: "full" },
+      { label: t("vms.linkedClone"), value: "linked" },
+    ],
+    [t],
+  );
+
+  const loadAvailableNodes = useCallback(
+    async (excludeCurrentNode: boolean) => {
+      if (!data) {
+        return [] as SelectProps.Option[];
+      }
+
+      const nodes = await fetchProxmox<NodeSummary[]>("/api/proxmox/nodes");
+      return (nodes ?? [])
+        .filter((node) => node.status === "online")
+        .filter((node) => !excludeCurrentNode || node.node !== data.node)
+        .map((node) => ({ label: node.node, value: node.node }))
+        .sort((left, right) => String(left.label).localeCompare(String(right.label)));
+    },
+    [data],
+  );
+
+  const loadCloneStorages = useCallback(async (node: string) => {
+    const storages = await fetchProxmox<StorageSummary[]>(`/api/proxmox/nodes/${node}/storage`);
+    return (storages ?? [])
+      .filter((storage) => storageSupportsContent(storage, "images"))
+      .map((storage) => ({ label: storage.storage, value: storage.storage }))
+      .sort((left, right) => String(left.label).localeCompare(String(right.label)));
+  }, []);
 
   const runPowerAction = useCallback(
     async (action: "start" | "stop" | "reboot") => {
@@ -431,6 +725,765 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
     }
   }, [data, diskSizeGb, loadVm, numericVmid, selectedDisk, t]);
 
+  const openCreateSnapshotModal = useCallback(() => {
+    setSnapshotName("");
+    setSnapshotDescription("");
+    setSnapshotVmState(false);
+    setSnapshotError(null);
+    setCreateSnapshotModalVisible(true);
+  }, []);
+
+  const openDeleteSnapshotModal = useCallback((snapshot: VmSnapshot) => {
+    setSelectedSnapshot(snapshot);
+    setSnapshotError(null);
+    setDeleteSnapshotModalVisible(true);
+  }, []);
+
+  const openRollbackSnapshotModal = useCallback((snapshot: VmSnapshot) => {
+    setSelectedSnapshot(snapshot);
+    setSnapshotError(null);
+    setRollbackSnapshotModalVisible(true);
+  }, []);
+
+  const openMigrateModal = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setLoadingNodes(true);
+      setMigrateError(null);
+      const nodes = await loadAvailableNodes(true);
+      setAvailableNodes(nodes);
+      setMigrateTargetNode(nodes[0] ?? null);
+      setMigrateOnline(data.status.status === "running");
+      setMigrateWithLocalDisks(true);
+      setMigrateModalVisible(true);
+    } catch (loadError) {
+      setMigrateError(loadError instanceof Error ? loadError.message : t("vms.failedToMigrate"));
+      setMigrateModalVisible(true);
+    } finally {
+      setLoadingNodes(false);
+    }
+  }, [data, loadAvailableNodes, t]);
+
+  const openCloneModal = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setLoadingNodes(true);
+      setCloneError(null);
+      const [nodes, nextId] = await Promise.all([
+        loadAvailableNodes(false),
+        fetchProxmox<number | string | ClusterNextId>("/api/proxmox/cluster/nextid"),
+      ]);
+      const normalizedNextId =
+        typeof nextId === "object" && nextId !== null && "vmid" in nextId ? nextId.vmid : nextId;
+      const defaultNode = nodes.find((node) => node.value === data.node) ?? nodes[0] ?? null;
+      setAvailableNodes(nodes);
+      setCloneNewId(normalizedNextId ? String(normalizedNextId) : "");
+      setCloneName("");
+      setCloneTargetNode(defaultNode);
+      setCloneTargetStorage(null);
+      setAvailableStorages([]);
+      setCloneFullClone({ label: t("vms.fullClone"), value: "full" });
+      setCloneDescription("");
+      setCloneModalVisible(true);
+    } catch (loadError) {
+      setCloneError(loadError instanceof Error ? loadError.message : t("vms.failedToClone"));
+      setCloneModalVisible(true);
+    } finally {
+      setLoadingNodes(false);
+    }
+  }, [data, loadAvailableNodes, t]);
+
+  const createSnapshot = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    if (!snapshotName.trim()) {
+      setSnapshotError(t("vms.snapshotNameRequired"));
+      return;
+    }
+
+    try {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+
+      const name = snapshotName.trim();
+      const body = new URLSearchParams({
+        snapname: name,
+        description: snapshotDescription,
+        vmstate: snapshotVmState ? "1" : "0",
+      });
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/snapshot`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("vms.snapshotCreated").replace("{name}", name),
+          dismissible: true,
+          id: "vm-snapshot-created",
+        },
+      ]);
+      setCreateSnapshotModalVisible(false);
+      setSnapshotName("");
+      setSnapshotDescription("");
+      setSnapshotVmState(false);
+      await loadVm();
+    } catch (createError) {
+      setSnapshotError(createError instanceof Error ? createError.message : t("vms.failedToCreateSnapshot"));
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [data, loadVm, numericVmid, snapshotDescription, snapshotName, snapshotVmState, t]);
+
+  const deleteSnapshot = useCallback(async () => {
+    if (!data || !selectedSnapshot) {
+      return;
+    }
+
+    try {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/snapshot/${selectedSnapshot.name}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("vms.snapshotDeleted").replace("{name}", selectedSnapshot.name),
+          dismissible: true,
+          id: "vm-snapshot-deleted",
+        },
+      ]);
+      setDeleteSnapshotModalVisible(false);
+      setSelectedSnapshot(null);
+      await loadVm();
+    } catch (deleteError) {
+      setSnapshotError(deleteError instanceof Error ? deleteError.message : t("vms.failedToDeleteSnapshot"));
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [data, loadVm, numericVmid, selectedSnapshot, t]);
+
+  const rollbackSnapshot = useCallback(async () => {
+    if (!data || !selectedSnapshot) {
+      return;
+    }
+
+    try {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/snapshot/${selectedSnapshot.name}/rollback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("vms.snapshotRolledBack").replace("{name}", selectedSnapshot.name),
+          dismissible: true,
+          id: "vm-snapshot-rolled-back",
+        },
+      ]);
+      setRollbackSnapshotModalVisible(false);
+      setSelectedSnapshot(null);
+      await loadVm();
+    } catch (rollbackError) {
+      setSnapshotError(rollbackError instanceof Error ? rollbackError.message : t("vms.failedToRollbackSnapshot"));
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [data, loadVm, numericVmid, selectedSnapshot, t]);
+
+  useEffect(() => {
+    const targetNode = optionValue(cloneTargetNode);
+
+    if (!cloneModalVisible || !targetNode) {
+      setAvailableStorages([]);
+      setCloneTargetStorage(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        setLoadingStorages(true);
+        const storages = await loadCloneStorages(targetNode);
+
+        if (cancelled) {
+          return;
+        }
+
+        setAvailableStorages(storages);
+        setCloneTargetStorage((current) =>
+          current && storages.some((storage) => storage.value === current.value) ? current : null,
+        );
+      } catch (loadError) {
+        if (!cancelled) {
+          setCloneError(loadError instanceof Error ? loadError.message : t("vms.failedToClone"));
+          setAvailableStorages([]);
+          setCloneTargetStorage(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingStorages(false);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cloneModalVisible, cloneTargetNode, loadCloneStorages, t]);
+
+  const submitMigration = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    const targetNode = optionValue(migrateTargetNode);
+
+    if (!targetNode) {
+      setMigrateError(t("vms.targetNodeRequired"));
+      return;
+    }
+
+    try {
+      setMigrateLoading(true);
+      setMigrateError(null);
+
+      const body = new URLSearchParams({
+        target: targetNode,
+        online: migrateOnline ? "1" : "0",
+        "with-local-disks": migrateWithLocalDisks ? "1" : "0",
+      });
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/migrate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("vms.migrationStarted").replace("{id}", String(numericVmid)).replace("{node}", targetNode),
+          dismissible: true,
+          id: "vm-migration-started",
+        },
+      ]);
+      setMigrateModalVisible(false);
+      await loadVm();
+    } catch (submitError) {
+      setMigrateError(submitError instanceof Error ? submitError.message : t("vms.failedToMigrate"));
+    } finally {
+      setMigrateLoading(false);
+    }
+  }, [data, loadVm, migrateOnline, migrateTargetNode, migrateWithLocalDisks, numericVmid, t]);
+
+  const submitClone = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    const newId = cloneNewId.trim();
+    const targetNode = optionValue(cloneTargetNode);
+    const targetStorage = optionValue(cloneTargetStorage);
+    const fullClone = optionValue(cloneFullClone) !== "linked";
+
+    if (!newId) {
+      setCloneError(t("vms.newIdRequired"));
+      return;
+    }
+
+    if (!targetNode) {
+      setCloneError(t("vms.targetNodeRequired"));
+      return;
+    }
+
+    try {
+      setCloneLoading(true);
+      setCloneError(null);
+
+      const body = new URLSearchParams({
+        newid: newId,
+        target: targetNode,
+        full: fullClone ? "1" : "0",
+      });
+
+      if (cloneName.trim()) {
+        body.set("name", cloneName.trim());
+      }
+
+      if (targetStorage) {
+        body.set("storage", targetStorage);
+      }
+
+      if (cloneDescription.trim()) {
+        body.set("description", cloneDescription.trim());
+      }
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/clone`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("vms.cloneStarted").replace("{id}", String(numericVmid)).replace("{newId}", newId),
+          dismissible: true,
+          id: "vm-clone-started",
+        },
+      ]);
+      setCloneModalVisible(false);
+      await loadVm();
+    } catch (submitError) {
+      setCloneError(submitError instanceof Error ? submitError.message : t("vms.failedToClone"));
+    } finally {
+      setCloneLoading(false);
+    }
+  }, [cloneDescription, cloneFullClone, cloneName, cloneNewId, cloneTargetNode, cloneTargetStorage, data, loadVm, numericVmid, t]);
+
+  const firewallTypeOptions = useMemo<ReadonlyArray<SelectProps.Option>>(
+    () => [
+      { label: t("firewall.typeIn"), value: "in" },
+      { label: t("firewall.typeOut"), value: "out" },
+      { label: t("firewall.typeGroup"), value: "group" },
+    ],
+    [t],
+  );
+
+  const firewallActionOptions = useMemo<ReadonlyArray<SelectProps.Option>>(
+    () => [
+      { label: t("firewall.actionAccept"), value: "ACCEPT" },
+      { label: t("firewall.actionDrop"), value: "DROP" },
+      { label: t("firewall.actionReject"), value: "REJECT" },
+    ],
+    [t],
+  );
+
+  const firewallProtocolOptions = useMemo<ReadonlyArray<SelectProps.Option>>(
+    () => [
+      { label: t("firewall.anyProtocol"), value: "" },
+      { label: "TCP", value: "tcp" },
+      { label: "UDP", value: "udp" },
+      { label: "ICMP", value: "icmp" },
+      { label: "ICMPv6", value: "icmpv6" },
+      { label: "ESP", value: "esp" },
+      { label: "GRE", value: "gre" },
+    ],
+    [t],
+  );
+
+  const cloudInitTypeOptions = useMemo<ReadonlyArray<SelectProps.Option>>(
+    () => [
+      { label: "NoCloud", value: "nocloud" },
+      { label: "ConfigDrive2", value: "configdrive2" },
+    ],
+    [],
+  );
+
+  const firewallTypeLabel = useCallback((value?: string) => {
+    switch ((value ?? "").toLowerCase()) {
+      case "in":
+        return t("firewall.typeIn");
+      case "out":
+        return t("firewall.typeOut");
+      case "group":
+        return t("firewall.typeGroup");
+      default:
+        return getTextValue(value, t("cluster.common.none"));
+    }
+  }, [t]);
+
+  const firewallActionLabel = useCallback((value?: string) => {
+    switch ((value ?? "").toUpperCase()) {
+      case "ACCEPT":
+        return t("firewall.actionAccept");
+      case "DROP":
+        return t("firewall.actionDrop");
+      case "REJECT":
+        return t("firewall.actionReject");
+      default:
+        return getTextValue(value, t("cluster.common.none"));
+    }
+  }, [t]);
+
+  const loadFirewallRules = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setFirewallRulesLoading(true);
+      const nextRules = await fetchProxmox<VmFirewallRule[]>(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/firewall/rules`);
+      setFirewallRules((nextRules ?? []).slice().sort((left, right) => left.pos - right.pos));
+      setFirewallRulesError(null);
+    } catch (loadError) {
+      setFirewallRulesError(loadError instanceof Error ? loadError.message : t("vms.failedToLoadFirewallRules"));
+    } finally {
+      setFirewallRulesLoading(false);
+    }
+  }, [data, numericVmid, t]);
+
+  const loadFirewallOptions = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setFirewallOptionsLoading(true);
+      const nextOptions = await fetchProxmox<VmFirewallOptions>(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/firewall/options`);
+      setFirewallOptions(nextOptions ?? {});
+      setFirewallOptionsError(null);
+    } catch (loadError) {
+      setFirewallOptionsError(loadError instanceof Error ? loadError.message : t("vms.failedToLoadFirewallOptions"));
+    } finally {
+      setFirewallOptionsLoading(false);
+    }
+  }, [data, numericVmid, t]);
+
+  const loadFirewallData = useCallback(async () => {
+    await Promise.all([loadFirewallRules(), loadFirewallOptions()]);
+    setFirewallLoaded(true);
+  }, [loadFirewallOptions, loadFirewallRules]);
+
+  const loadBackups = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setBackupsLoading(true);
+      const storages = await fetchProxmox<StorageSummary[]>(`/api/proxmox/nodes/${data.node}/storage`);
+      const backupStorages = (storages ?? []).filter((storage) => storageSupportsContent(storage, "backup"));
+
+      const backupResults = await Promise.all(
+        backupStorages.map(async (storage) => {
+          const items = await fetchProxmox<Array<Omit<VmBackupItem, "storage">>>(
+            `/api/proxmox/nodes/${data.node}/storage/${encodeURIComponent(storage.storage)}/content?content=backup&vmid=${numericVmid}`,
+          );
+
+          return (items ?? []).map((item) => ({ ...item, storage: storage.storage }));
+        }),
+      );
+
+      setBackups(
+        backupResults
+          .flat()
+          .sort((left, right) => (right.ctime ?? 0) - (left.ctime ?? 0)),
+      );
+      setBackupsError(null);
+    } catch (loadError) {
+      setBackupsError(loadError instanceof Error ? loadError.message : t("vms.failedToLoadBackups"));
+    } finally {
+      setBackupsLoading(false);
+    }
+  }, [data, numericVmid, t]);
+
+  useEffect(() => {
+    setFirewallLoaded(false);
+    setFirewallRules([]);
+    setFirewallOptions(null);
+    setFirewallRulesError(null);
+    setFirewallOptionsError(null);
+    setBackupsLoaded(false);
+    setBackups([]);
+    setBackupsError(null);
+  }, [data?.node, numericVmid]);
+
+  useEffect(() => {
+    if (activeTabId === "firewall" && data && !firewallLoaded && !firewallRulesLoading && !firewallOptionsLoading) {
+      void loadFirewallData();
+    }
+
+    if (activeTabId === "backup" && data && !backupsLoaded && !backupsLoading) {
+      void loadBackups().then(() => setBackupsLoaded(true));
+    }
+  }, [activeTabId, backupsLoaded, backupsLoading, data, firewallLoaded, firewallOptionsLoading, firewallRulesLoading, loadBackups, loadFirewallData]);
+
+  const openOptionsModal = useCallback(() => {
+    if (!data) {
+      return;
+    }
+
+    setOptionsForm(buildVmOptionsForm(data.config));
+    setOptionsFormError(null);
+    setOptionsModalVisible(true);
+  }, [data]);
+
+  const openCloudInitModal = useCallback(() => {
+    if (!data) {
+      return;
+    }
+
+    setCloudInitForm(buildVmCloudInitForm(data.config));
+    setCloudInitFormError(null);
+    setCloudInitModalVisible(true);
+  }, [data]);
+
+  const saveOptions = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setOptionsSaving(true);
+      setOptionsFormError(null);
+
+      const params = new URLSearchParams();
+      params.set("boot", optionsForm.boot);
+      params.set("onboot", optionsForm.onboot ? "1" : "0");
+      params.set("agent", optionsForm.agent ? "1" : "0");
+      params.set("protection", optionsForm.protection ? "1" : "0");
+      params.set("hotplug", optionsForm.hotplug);
+      params.set("tablet", optionsForm.tablet ? "1" : "0");
+      params.set("localtime", optionsForm.localtime ? "1" : "0");
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/config`, {
+        method: "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setOptionsModalVisible(false);
+      addFlash({ id: `vm-options-${Date.now()}`, type: "success", content: t("vms.optionsUpdated"), dismissible: true });
+      await loadVm();
+    } catch (saveError) {
+      setOptionsFormError(saveError instanceof Error ? saveError.message : t("vms.failedToUpdateOptions"));
+    } finally {
+      setOptionsSaving(false);
+    }
+  }, [addFlash, data, loadVm, numericVmid, optionsForm, t]);
+
+  const saveCloudInit = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setCloudInitSaving(true);
+      setCloudInitFormError(null);
+
+      const params = new URLSearchParams();
+      params.set("ciuser", cloudInitForm.ciuser);
+      params.set("nameserver", cloudInitForm.nameserver);
+      params.set("searchdomain", cloudInitForm.searchdomain);
+      params.set("sshkeys", cloudInitForm.sshkeys);
+      params.set("ipconfig0", cloudInitForm.ipconfig0);
+      params.set("citype", cloudInitForm.citype || "nocloud");
+      if (cloudInitForm.cipassword.trim()) {
+        params.set("cipassword", cloudInitForm.cipassword);
+      }
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/config`, {
+        method: "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setCloudInitModalVisible(false);
+      addFlash({ id: `vm-cloudinit-${Date.now()}`, type: "success", content: t("vms.cloudInitUpdated"), dismissible: true });
+      await loadVm();
+    } catch (saveError) {
+      setCloudInitFormError(saveError instanceof Error ? saveError.message : t("vms.failedToUpdateCloudInit"));
+    } finally {
+      setCloudInitSaving(false);
+    }
+  }, [addFlash, cloudInitForm, data, loadVm, numericVmid, t]);
+
+  const openCreateFirewallRuleModal = useCallback(() => {
+    setFirewallRuleModalMode("create");
+    setEditingFirewallRule(null);
+    setFirewallRuleForm(EMPTY_VM_FIREWALL_RULE_FORM);
+    setFirewallActionError(null);
+    setFirewallRuleEditorVisible(true);
+  }, []);
+
+  const openEditFirewallRuleModal = useCallback((rule: VmFirewallRule) => {
+    setFirewallRuleModalMode("edit");
+    setEditingFirewallRule(rule);
+    setFirewallRuleForm(buildVmFirewallRuleForm(rule));
+    setFirewallActionError(null);
+    setFirewallRuleEditorVisible(true);
+  }, []);
+
+  const openDeleteFirewallRuleModal = useCallback((rule: VmFirewallRule) => {
+    setEditingFirewallRule(rule);
+    setFirewallActionError(null);
+    setFirewallDeleteRuleVisible(true);
+  }, []);
+
+  const openFirewallOptionsModal = useCallback(() => {
+    setFirewallOptionsForm(firewallOptions ? buildVmFirewallOptionsForm(firewallOptions) : EMPTY_VM_FIREWALL_OPTIONS_FORM);
+    setFirewallActionError(null);
+    setFirewallOptionsModalVisible(true);
+  }, [firewallOptions]);
+
+  const submitFirewallRule = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    if (firewallRuleModalMode === "edit" && !editingFirewallRule) {
+      return;
+    }
+
+    try {
+      setFirewallSubmitting(true);
+      setFirewallActionError(null);
+
+      const params = new URLSearchParams();
+      params.set("type", firewallRuleForm.type || "in");
+      params.set("action", firewallRuleForm.action || "ACCEPT");
+      params.set("enable", firewallRuleForm.enable ? "1" : "0");
+      if (firewallRuleForm.proto.trim()) params.set("proto", firewallRuleForm.proto.trim());
+      if (firewallRuleForm.source.trim()) params.set("source", firewallRuleForm.source.trim());
+      if (firewallRuleForm.dest.trim()) params.set("dest", firewallRuleForm.dest.trim());
+      if (firewallRuleForm.dport.trim()) params.set("dport", firewallRuleForm.dport.trim());
+      if (firewallRuleForm.comment.trim()) params.set("comment", firewallRuleForm.comment.trim());
+
+      const path = firewallRuleModalMode === "create"
+        ? `/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/firewall/rules`
+        : `/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/firewall/rules/${editingFirewallRule?.pos ?? 0}`;
+
+      await fetchProxmox(path, {
+        method: firewallRuleModalMode === "create" ? "POST" : "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setFirewallRuleEditorVisible(false);
+      addFlash({
+        id: `vm-firewall-rule-${firewallRuleModalMode}-${Date.now()}`,
+        type: "success",
+        content: firewallRuleModalMode === "create" ? t("vms.firewallRuleCreated") : t("vms.firewallRuleUpdated"),
+        dismissible: true,
+      });
+      await loadFirewallRules();
+    } catch (submitError) {
+      setFirewallActionError(
+        submitError instanceof Error
+          ? submitError.message
+          : firewallRuleModalMode === "create"
+            ? t("vms.failedToCreateFirewallRule")
+            : t("vms.failedToUpdateFirewallRule"),
+      );
+    } finally {
+      setFirewallSubmitting(false);
+    }
+  }, [addFlash, data, editingFirewallRule, firewallRuleForm, firewallRuleModalMode, loadFirewallRules, numericVmid, t]);
+
+  const deleteFirewallRule = useCallback(async () => {
+    if (!data || !editingFirewallRule) {
+      return;
+    }
+
+    try {
+      setFirewallSubmitting(true);
+      setFirewallActionError(null);
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/firewall/rules/${editingFirewallRule.pos}`, {
+        method: "DELETE",
+        ...encodeFormBody(new URLSearchParams()),
+      });
+      setFirewallDeleteRuleVisible(false);
+      addFlash({ id: `vm-firewall-delete-${Date.now()}`, type: "success", content: t("vms.firewallRuleDeleted"), dismissible: true });
+      await loadFirewallRules();
+    } catch (deleteError) {
+      setFirewallActionError(deleteError instanceof Error ? deleteError.message : t("vms.failedToDeleteFirewallRule"));
+    } finally {
+      setFirewallSubmitting(false);
+    }
+  }, [addFlash, data, editingFirewallRule, loadFirewallRules, numericVmid, t]);
+
+  const submitFirewallOptions = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setFirewallSubmitting(true);
+      setFirewallActionError(null);
+
+      const params = new URLSearchParams();
+      params.set("enable", firewallOptionsForm.enable ? "1" : "0");
+      params.set("dhcp", firewallOptionsForm.dhcp ? "1" : "0");
+      params.set("macfilter", firewallOptionsForm.macfilter ? "1" : "0");
+      params.set("policy_in", firewallOptionsForm.policyIn || "DROP");
+      params.set("policy_out", firewallOptionsForm.policyOut || "ACCEPT");
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/qemu/${numericVmid}/firewall/options`, {
+        method: "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setFirewallOptionsModalVisible(false);
+      addFlash({ id: `vm-firewall-options-${Date.now()}`, type: "success", content: t("vms.firewallOptionsUpdated"), dismissible: true });
+      await loadFirewallOptions();
+    } catch (submitError) {
+      setFirewallActionError(submitError instanceof Error ? submitError.message : t("vms.failedToUpdateFirewallOptions"));
+    } finally {
+      setFirewallSubmitting(false);
+    }
+  }, [addFlash, data, firewallOptionsForm, loadFirewallOptions, numericVmid, t]);
+
+  const openDeleteBackupModal = useCallback((backup: VmBackupItem) => {
+    setSelectedBackup(backup);
+    setBackupActionError(null);
+    setDeleteBackupVisible(true);
+  }, []);
+
+  const deleteBackup = useCallback(async () => {
+    if (!data || !selectedBackup) {
+      return;
+    }
+
+    try {
+      setBackupDeleting(true);
+      setBackupActionError(null);
+      await fetchProxmox(`/api/proxmox/nodes/${data.node}/storage/${encodeURIComponent(selectedBackup.storage)}/content/${encodeURIComponent(selectedBackup.volid)}`, {
+        method: "DELETE",
+        ...encodeFormBody(new URLSearchParams()),
+      });
+      setDeleteBackupVisible(false);
+      addFlash({ id: `vm-backup-delete-${Date.now()}`, type: "success", content: t("vms.backupDeleted"), dismissible: true });
+      await loadBackups();
+    } catch (deleteError) {
+      setBackupActionError(deleteError instanceof Error ? deleteError.message : t("vms.failedToDeleteBackup"));
+    } finally {
+      setBackupDeleting(false);
+    }
+  }, [addFlash, data, loadBackups, selectedBackup, t]);
+
   const snapshotsColumns = useMemo<TableProps<VmSnapshot>["columnDefinitions"]>(
     () => [
       {
@@ -454,8 +1507,22 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
         header: t("vms.vmState"),
         cell: ({ vmstate }) => (vmstate ? t("vms.included") : t("vms.noState")),
       },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        cell: (snapshot) => snapshot.name === "current" ? "-" : (
+          <SpaceBetween size="xs" direction="horizontal">
+            <Button variant="inline-link" onClick={() => openRollbackSnapshotModal(snapshot)}>
+              {t("vms.rollback")}
+            </Button>
+            <Button variant="inline-link" onClick={() => openDeleteSnapshotModal(snapshot)}>
+              {t("vms.deleteSnapshot")}
+            </Button>
+          </SpaceBetween>
+        ),
+      },
     ],
-    [t],
+    [openDeleteSnapshotModal, openRollbackSnapshotModal, t],
   );
 
   const tasksColumns = useMemo<TableProps<VmTask>["columnDefinitions"]>(
@@ -484,6 +1551,93 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
     ],
     [t],
   );
+
+  const firewallRuleColumns = useMemo<TableProps<VmFirewallRule>["columnDefinitions"]>(
+    () => [
+      { id: "pos", header: t("firewall.position"), cell: ({ pos }) => String(pos), isRowHeader: true },
+      { id: "type", header: t("firewall.type"), cell: ({ type }) => firewallTypeLabel(type) },
+      { id: "action", header: t("firewall.action"), cell: ({ action }) => firewallActionLabel(action) },
+      { id: "proto", header: t("firewall.protocol"), cell: ({ proto }) => getTextValue(proto, t("firewall.anyProtocol")) },
+      { id: "source", header: t("firewall.source"), cell: ({ source }) => getTextValue(source, t("cluster.common.none")) },
+      { id: "dest", header: t("firewall.destination"), cell: ({ dest }) => getTextValue(dest, t("cluster.common.none")) },
+      { id: "dport", header: t("firewall.destinationPort"), cell: ({ dport }) => getTextValue(dport, t("cluster.common.none")) },
+      { id: "comment", header: t("firewall.comment"), cell: ({ comment }) => getTextValue(comment, t("cluster.common.none")) },
+      {
+        id: "enable",
+        header: t("firewall.enable"),
+        cell: (rule) => (
+          <StatusIndicator type={isEnabled(rule.enable) ? "success" : "stopped"}>
+            {isEnabled(rule.enable) ? t("firewall.enabled") : t("firewall.disabled")}
+          </StatusIndicator>
+        ),
+      },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        cell: (rule) => (
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button variant="inline-link" onClick={() => openEditFirewallRuleModal(rule)}>
+              {t("vms.editFirewallRule")}
+            </Button>
+            <Button variant="inline-link" onClick={() => openDeleteFirewallRuleModal(rule)}>
+              {t("vms.deleteFirewallRule")}
+            </Button>
+          </SpaceBetween>
+        ),
+      },
+    ],
+    [firewallActionLabel, firewallTypeLabel, openDeleteFirewallRuleModal, openEditFirewallRuleModal, t],
+  );
+
+  const backupColumns = useMemo<TableProps<VmBackupItem>["columnDefinitions"]>(
+    () => [
+      { id: "volid", header: t("vms.backupVolid"), cell: ({ volid }) => volid, isRowHeader: true },
+      { id: "date", header: t("vms.backupDate"), cell: ({ ctime }) => formatDateTime(ctime) },
+      { id: "size", header: t("vms.backupSize"), cell: ({ size }) => (typeof size === "number" ? formatBytes(size) : "-") },
+      { id: "notes", header: t("vms.backupNotes"), cell: ({ notes }) => getTextValue(notes, t("cluster.common.none")) },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        cell: (backup) => (
+          <Button variant="inline-link" onClick={() => openDeleteBackupModal(backup)}>
+            {t("vms.deleteBackup")}
+          </Button>
+        ),
+      },
+    ],
+    [openDeleteBackupModal, t],
+  );
+
+  const optionsItems = useMemo(() => {
+    const config = data?.config ?? {};
+
+    return [
+      { label: t("vms.bootOrder"), value: getTextValue(getConfigStringValue(config.boot)) },
+      { label: t("vms.startOnBoot"), value: isEnabled(config.onboot) ? t("common.yes") : t("common.no") },
+      { label: t("vms.qemuAgentLabel"), value: isEnabled(config.agent) ? t("common.yes") : t("common.no") },
+      { label: t("vms.protection"), value: isEnabled(config.protection) ? t("common.yes") : t("common.no") },
+      { label: t("vms.hotplug"), value: getTextValue(getConfigStringValue(config.hotplug)) },
+      { label: t("vms.tabletDevice"), value: isEnabled(config.tablet) ? t("common.yes") : t("common.no") },
+      { label: t("vms.useLocalTime"), value: isEnabled(config.localtime) ? t("common.yes") : t("common.no") },
+    ];
+  }, [data?.config, t]);
+
+  const cloudInitItems = useMemo(() => {
+    const config = data?.config ?? {};
+    const sshKeys = decodeUrlValue(getConfigStringValue(config.sshkeys));
+
+    return [
+      { label: t("vms.ciUser"), value: getTextValue(getConfigStringValue(config.ciuser)) },
+      { label: t("vms.ciPassword"), value: getConfigStringValue(config.cipassword) ? "****" : "-" },
+      { label: t("vms.ciDnsServers"), value: getTextValue(getConfigStringValue(config.nameserver)) },
+      { label: t("vms.ciSearchDomain"), value: getTextValue(getConfigStringValue(config.searchdomain)) },
+      { label: t("vms.ciSshKeys"), value: getTextValue(sshKeys) },
+      { label: t("vms.ciIpConfig"), value: getTextValue(getConfigStringValue(config.ipconfig0)) },
+      { label: t("vms.ciType"), value: getTextValue(getConfigStringValue(config.citype)) },
+    ];
+  }, [data?.config, t]);
+
+  const firewallOptionDetails = firewallOptions ? buildVmFirewallOptionsForm(firewallOptions) : EMPTY_VM_FIREWALL_OPTIONS_FORM;
 
   if (!Number.isFinite(numericVmid)) {
     return (
@@ -613,7 +1767,19 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
           items={data.snapshots}
           columnDefinitions={snapshotsColumns}
           empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("vms.noSnapshotsAvailable")}</Box>}
-          header={<Header variant="h2" counter={`(${data.snapshots.length})`}>{t("vms.snapshots")}</Header>}
+          header={
+            <Header
+              variant="h2"
+              counter={`(${data.snapshots.length})`}
+              actions={
+                <Button onClick={openCreateSnapshotModal} loading={snapshotLoading} disabled={snapshotLoading}>
+                  {t("vms.createSnapshot")}
+                </Button>
+              }
+            >
+              {t("vms.snapshots")}
+            </Header>
+          }
         />
       ),
     },
@@ -634,6 +1800,149 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
         />
       ),
     },
+    {
+      id: "options",
+      label: t("vms.options"),
+      content: (
+        <SpaceBetween size="l">
+          <Header
+            variant="h2"
+            actions={
+              <Button onClick={openOptionsModal}>
+                {t("vms.editOptions")}
+              </Button>
+            }
+          >
+            {t("vms.options")}
+          </Header>
+          <KeyValuePairs columns={2} items={optionsItems} />
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "cloudinit",
+      label: t("vms.cloudinit"),
+      content: (
+        <SpaceBetween size="l">
+          <Header
+            variant="h2"
+            actions={
+              <Button onClick={openCloudInitModal}>
+                {t("vms.editCloudInit")}
+              </Button>
+            }
+          >
+            {t("vms.cloudinit")}
+          </Header>
+          <KeyValuePairs columns={2} items={cloudInitItems} />
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "firewall",
+      label: t("vms.firewallTab"),
+      content: (
+        <SpaceBetween size="l">
+          <Table
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="pos"
+            items={firewallRules}
+            columnDefinitions={firewallRuleColumns}
+            loading={firewallRulesLoading}
+            loadingText={t("common.loading")}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("firewall.noRules")}</Box>}
+            header={
+              <Header
+                variant="h2"
+                counter={`(${firewallRules.length})`}
+                actions={
+                  <SpaceBetween size="xs" direction="horizontal">
+                    <Button iconName="refresh" onClick={() => void loadFirewallRules()}>
+                      {t("common.refresh")}
+                    </Button>
+                    <Button variant="primary" onClick={openCreateFirewallRuleModal}>
+                      {t("vms.addFirewallRule")}
+                    </Button>
+                  </SpaceBetween>
+                }
+              >
+                {t("vms.vmFirewallRules")}
+              </Header>
+            }
+          />
+          {firewallRulesError ? <Alert type="error">{firewallRulesError}</Alert> : null}
+          <SpaceBetween size="m">
+            <Header
+              variant="h2"
+              actions={
+                <SpaceBetween size="xs" direction="horizontal">
+                  <Button iconName="refresh" onClick={() => void loadFirewallOptions()}>
+                    {t("common.refresh")}
+                  </Button>
+                  <Button onClick={openFirewallOptionsModal}>
+                    {t("vms.editFirewallOptions")}
+                  </Button>
+                </SpaceBetween>
+              }
+            >
+              {t("vms.vmFirewallOptions")}
+            </Header>
+            {firewallOptionsLoading ? (
+              <Box>{t("common.loading")}</Box>
+            ) : (
+              <KeyValuePairs
+                columns={2}
+                items={[
+                  { label: t("vms.firewallEnabled"), value: firewallOptionDetails.enable ? t("common.yes") : t("common.no") },
+                  { label: t("vms.dhcp"), value: firewallOptionDetails.dhcp ? t("common.yes") : t("common.no") },
+                  { label: t("vms.macFilter"), value: firewallOptionDetails.macfilter ? t("common.yes") : t("common.no") },
+                  { label: t("firewall.policyIn"), value: firewallActionLabel(firewallOptionDetails.policyIn) },
+                  { label: t("firewall.policyOut"), value: firewallActionLabel(firewallOptionDetails.policyOut) },
+                ]}
+              />
+            )}
+            {firewallOptionsError ? <Alert type="error">{firewallOptionsError}</Alert> : null}
+          </SpaceBetween>
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "backup",
+      label: t("vms.backupTab"),
+      content: (
+        <SpaceBetween size="l">
+          <Table
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="volid"
+            items={backups}
+            columnDefinitions={backupColumns}
+            loading={backupsLoading}
+            loadingText={t("vms.loadingBackups")}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("vms.noBackups")}</Box>}
+            header={
+              <Header
+                variant="h2"
+                counter={`(${backups.length})`}
+                actions={
+                  <Button iconName="refresh" onClick={() => void loadBackups().then(() => setBackupsLoaded(true))}>
+                    {t("common.refresh")}
+                  </Button>
+                }
+              >
+                {t("vms.vmBackups")}
+              </Header>
+            }
+          />
+          {backupsError ? <Alert type="error">{backupsError}</Alert> : null}
+        </SpaceBetween>
+      ),
+    },
   ];
 
   return (
@@ -647,6 +1956,11 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
       {configError ? (
         <Alert type="error" header={t("vms.configUpdateFailed")}>
           {configError}
+        </Alert>
+      ) : null}
+      {snapshotError ? (
+        <Alert type="error" header={t("common.error")} dismissible onDismiss={() => setSnapshotError(null)}>
+          {snapshotError}
         </Alert>
       ) : null}
       <Header
@@ -663,6 +1977,12 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
             <Button loading={actionLoading === "reboot"} disabled={!canReboot} onClick={() => void runPowerAction("reboot")}>
               {t("vms.reboot")}
             </Button>
+            <Button disabled={!!actionLoading} onClick={() => void openMigrateModal()}>
+              {t("vms.migrate")}
+            </Button>
+            <Button disabled={!!actionLoading} onClick={() => void openCloneModal()}>
+              {t("vms.clone")}
+            </Button>
             <Button disabled={!canOpenConsole} onClick={() => router.push(`/vms/${numericVmid}/console`)}>
               {t("vms.console")}
             </Button>
@@ -675,6 +1995,495 @@ export default function VirtualMachineDetailPage(props: { params: Promise<{ vmid
         {`${data.status.name ?? `${t("vms.virtualMachines")} ${numericVmid}`} · ${t("vms.vmid")} ${numericVmid}`}
       </Header>
       <Tabs tabs={tabs} activeTabId={activeTabId} onChange={({ detail }) => setActiveTabId(detail.activeTabId)} />
+      <Modal
+        visible={optionsModalVisible}
+        onDismiss={() => {
+          setOptionsModalVisible(false);
+          setOptionsFormError(null);
+        }}
+        header={t("vms.editOptions")}
+        closeAriaLabel={t("vms.editOptions")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setOptionsModalVisible(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={optionsSaving} onClick={() => void saveOptions()}>
+                {t("common.save")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {optionsFormError ? <Alert type="error">{optionsFormError}</Alert> : null}
+          <FormField label={t("vms.bootOrder")}>
+            <Input value={optionsForm.boot} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, boot: detail.value }))} />
+          </FormField>
+          <Toggle checked={optionsForm.onboot} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, onboot: detail.checked }))}>
+            {t("vms.startOnBoot")}
+          </Toggle>
+          <Toggle checked={optionsForm.agent} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, agent: detail.checked }))}>
+            {t("vms.qemuAgentLabel")}
+          </Toggle>
+          <Toggle checked={optionsForm.protection} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, protection: detail.checked }))}>
+            {t("vms.protection")}
+          </Toggle>
+          <FormField label={t("vms.hotplug")}>
+            <Input value={optionsForm.hotplug} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, hotplug: detail.value }))} />
+          </FormField>
+          <Toggle checked={optionsForm.tablet} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, tablet: detail.checked }))}>
+            {t("vms.tabletDevice")}
+          </Toggle>
+          <Toggle checked={optionsForm.localtime} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, localtime: detail.checked }))}>
+            {t("vms.useLocalTime")}
+          </Toggle>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={cloudInitModalVisible}
+        onDismiss={() => {
+          setCloudInitModalVisible(false);
+          setCloudInitFormError(null);
+        }}
+        header={t("vms.editCloudInit")}
+        closeAriaLabel={t("vms.editCloudInit")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setCloudInitModalVisible(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={cloudInitSaving} onClick={() => void saveCloudInit()}>
+                {t("common.save")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {cloudInitFormError ? <Alert type="error">{cloudInitFormError}</Alert> : null}
+          <FormField label={t("vms.ciUser")}>
+            <Input value={cloudInitForm.ciuser} placeholder={t("vms.ciUserPlaceholder")} onChange={({ detail }) => setCloudInitForm((current) => ({ ...current, ciuser: detail.value }))} />
+          </FormField>
+          <FormField label={t("vms.ciPassword")}>
+            <Input type="password" value={cloudInitForm.cipassword} placeholder={getConfigStringValue(data.config.cipassword) ? "****" : undefined} onChange={({ detail }) => setCloudInitForm((current) => ({ ...current, cipassword: detail.value }))} />
+          </FormField>
+          <FormField label={t("vms.ciDnsServers")}>
+            <Input value={cloudInitForm.nameserver} placeholder={t("vms.ciDnsPlaceholder")} onChange={({ detail }) => setCloudInitForm((current) => ({ ...current, nameserver: detail.value }))} />
+          </FormField>
+          <FormField label={t("vms.ciSearchDomain")}>
+            <Input value={cloudInitForm.searchdomain} placeholder={t("vms.ciSearchDomainPlaceholder")} onChange={({ detail }) => setCloudInitForm((current) => ({ ...current, searchdomain: detail.value }))} />
+          </FormField>
+          <FormField label={t("vms.ciSshKeys")}>
+            <Textarea value={cloudInitForm.sshkeys} placeholder={t("vms.ciSshKeysPlaceholder")} rows={5} onChange={({ detail }) => setCloudInitForm((current) => ({ ...current, sshkeys: detail.value }))} />
+          </FormField>
+          <FormField label={t("vms.ciIpConfig")}>
+            <Input value={cloudInitForm.ipconfig0} placeholder={t("vms.ciIpConfigPlaceholder")} onChange={({ detail }) => setCloudInitForm((current) => ({ ...current, ipconfig0: detail.value }))} />
+          </FormField>
+          <FormField label={t("vms.ciType")}>
+            <Select
+              selectedOption={cloudInitTypeOptions.find((option) => option.value === cloudInitForm.citype) ?? null}
+              onChange={({ detail }) => setCloudInitForm((current) => ({ ...current, citype: optionValue(detail.selectedOption) || "nocloud" }))}
+              options={cloudInitTypeOptions}
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={firewallRuleEditorVisible}
+        onDismiss={() => {
+          setFirewallRuleEditorVisible(false);
+          setFirewallActionError(null);
+        }}
+        header={firewallRuleModalMode === "create" ? t("vms.addFirewallRule") : t("vms.editFirewallRule")}
+        footer={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button onClick={() => setFirewallRuleEditorVisible(false)}>{t("common.cancel")}</Button>
+            <Button variant="primary" loading={firewallSubmitting} onClick={() => void submitFirewallRule()}>
+              {firewallRuleModalMode === "create" ? t("common.create") : t("common.save")}
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="m">
+          {firewallActionError ? <Alert type="error">{firewallActionError}</Alert> : null}
+          <FormField label={t("firewall.type")}>
+            <Select
+              selectedOption={firewallTypeOptions.find((option) => option.value === firewallRuleForm.type) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, type: optionValue(detail.selectedOption) || "in" }))}
+              options={firewallTypeOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.action")}>
+            <Select
+              selectedOption={firewallActionOptions.find((option) => option.value === firewallRuleForm.action) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, action: optionValue(detail.selectedOption) || "ACCEPT" }))}
+              options={firewallActionOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.protocol")}>
+            <Select
+              selectedOption={firewallProtocolOptions.find((option) => option.value === firewallRuleForm.proto) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, proto: optionValue(detail.selectedOption) }))}
+              options={firewallProtocolOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.source")}>
+            <Input value={firewallRuleForm.source} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, source: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.destination")}>
+            <Input value={firewallRuleForm.dest} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, dest: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.destinationPort")}>
+            <Input value={firewallRuleForm.dport} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, dport: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.comment")}>
+            <Textarea value={firewallRuleForm.comment} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, comment: detail.value }))} rows={4} />
+          </FormField>
+          <Toggle checked={firewallRuleForm.enable} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, enable: detail.checked }))}>
+            {t("firewall.enable")}
+          </Toggle>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={firewallDeleteRuleVisible}
+        onDismiss={() => {
+          setFirewallDeleteRuleVisible(false);
+          setFirewallActionError(null);
+        }}
+        header={t("vms.deleteFirewallRule")}
+        footer={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button onClick={() => setFirewallDeleteRuleVisible(false)}>{t("common.cancel")}</Button>
+            <Button variant="primary" loading={firewallSubmitting} onClick={() => void deleteFirewallRule()}>
+              {t("common.delete")}
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="m">
+          {firewallActionError ? <Alert type="error">{firewallActionError}</Alert> : null}
+          <Box>
+            {editingFirewallRule ? interpolate(t("vms.deleteFirewallRuleConfirmation"), { pos: editingFirewallRule.pos }) : null}
+          </Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={firewallOptionsModalVisible}
+        onDismiss={() => {
+          setFirewallOptionsModalVisible(false);
+          setFirewallActionError(null);
+        }}
+        header={t("vms.editFirewallOptions")}
+        footer={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button onClick={() => setFirewallOptionsModalVisible(false)}>{t("common.cancel")}</Button>
+            <Button variant="primary" loading={firewallSubmitting} onClick={() => void submitFirewallOptions()}>
+              {t("common.save")}
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="m">
+          {firewallActionError ? <Alert type="error">{firewallActionError}</Alert> : null}
+          <Toggle checked={firewallOptionsForm.enable} onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, enable: detail.checked }))}>
+            {t("vms.firewallEnabled")}
+          </Toggle>
+          <Toggle checked={firewallOptionsForm.dhcp} onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, dhcp: detail.checked }))}>
+            {t("vms.dhcp")}
+          </Toggle>
+          <Toggle checked={firewallOptionsForm.macfilter} onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, macfilter: detail.checked }))}>
+            {t("vms.macFilter")}
+          </Toggle>
+          <FormField label={t("firewall.policyIn")}>
+            <Select
+              selectedOption={firewallActionOptions.find((option) => option.value === firewallOptionsForm.policyIn) ?? null}
+              onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, policyIn: optionValue(detail.selectedOption) || "DROP" }))}
+              options={firewallActionOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.policyOut")}>
+            <Select
+              selectedOption={firewallActionOptions.find((option) => option.value === firewallOptionsForm.policyOut) ?? null}
+              onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, policyOut: optionValue(detail.selectedOption) || "ACCEPT" }))}
+              options={firewallActionOptions}
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={deleteBackupVisible}
+        onDismiss={() => {
+          setDeleteBackupVisible(false);
+          setBackupActionError(null);
+        }}
+        header={t("vms.deleteBackup")}
+        footer={
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button onClick={() => setDeleteBackupVisible(false)}>{t("common.cancel")}</Button>
+            <Button variant="primary" loading={backupDeleting} onClick={() => void deleteBackup()}>
+              {t("common.delete")}
+            </Button>
+          </SpaceBetween>
+        }
+      >
+        <SpaceBetween size="m">
+          {backupActionError ? <Alert type="error">{backupActionError}</Alert> : null}
+          <Box>
+            {selectedBackup ? interpolate(t("vms.deleteBackupConfirmation"), { volid: selectedBackup.volid }) : null}
+          </Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={migrateModalVisible}
+        onDismiss={() => {
+          setMigrateModalVisible(false);
+          setMigrateError(null);
+        }}
+        header={t("vms.migrateVm")}
+        closeAriaLabel={t("vms.migrateVm")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setMigrateModalVisible(false);
+                  setMigrateError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={migrateLoading} onClick={() => void submitMigration()}>
+                {t("vms.migrate")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {migrateError ? (
+            <Alert type="error" header={t("vms.failedToMigrate")}>
+              {migrateError}
+            </Alert>
+          ) : null}
+          <FormField label={t("vms.targetNode")}>
+            <Select
+              selectedOption={migrateTargetNode}
+              onChange={({ detail }) => setMigrateTargetNode(detail.selectedOption)}
+              options={availableNodes}
+              placeholder={t("vms.targetNode")}
+              statusType={loadingNodes ? "loading" : "finished"}
+              loadingText={t("vms.loadingNodes")}
+              empty={t("vms.noOtherNodes")}
+            />
+          </FormField>
+          <Checkbox checked={migrateOnline} onChange={({ detail }) => setMigrateOnline(detail.checked)}>
+            {t("vms.onlineMigration")}
+          </Checkbox>
+          <Box color="text-body-secondary">{t("vms.onlineMigrationDesc")}</Box>
+          <Checkbox checked={migrateWithLocalDisks} onChange={({ detail }) => setMigrateWithLocalDisks(detail.checked)}>
+            {t("vms.withLocalDisks")}
+          </Checkbox>
+          <Box color="text-body-secondary">{t("vms.withLocalDisksDesc")}</Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={cloneModalVisible}
+        onDismiss={() => {
+          setCloneModalVisible(false);
+          setCloneError(null);
+        }}
+        header={t("vms.cloneVm")}
+        closeAriaLabel={t("vms.cloneVm")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setCloneModalVisible(false);
+                  setCloneError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={cloneLoading} onClick={() => void submitClone()}>
+                {t("vms.clone")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {cloneError ? (
+            <Alert type="error" header={t("vms.failedToClone")}>
+              {cloneError}
+            </Alert>
+          ) : null}
+          <FormField label={t("vms.newVmId")}>
+            <Input type="number" value={cloneNewId} onChange={({ detail }) => setCloneNewId(detail.value)} />
+          </FormField>
+          <FormField label={t("vms.newName")}>
+            <Input value={cloneName} onChange={({ detail }) => setCloneName(detail.value)} />
+          </FormField>
+          <FormField label={t("vms.targetNode")}>
+            <Select
+              selectedOption={cloneTargetNode}
+              onChange={({ detail }) => setCloneTargetNode(detail.selectedOption)}
+              options={availableNodes}
+              placeholder={t("vms.targetNode")}
+              statusType={loadingNodes ? "loading" : "finished"}
+              loadingText={t("vms.loadingNodes")}
+            />
+          </FormField>
+          <FormField label={t("vms.targetStorage")} description={t("vms.targetStorageDesc")}>
+            <Select
+              selectedOption={cloneTargetStorage}
+              onChange={({ detail }) => setCloneTargetStorage(detail.selectedOption)}
+              options={availableStorages}
+              placeholder={t("vms.sameStorageHint")}
+              statusType={loadingStorages ? "loading" : "finished"}
+              loadingText={t("vms.loadingStorages")}
+              empty={t("vms.sameStorageHint")}
+            />
+          </FormField>
+          <FormField label={t("vms.cloneMode")}>
+            <Select
+              selectedOption={cloneFullClone}
+              onChange={({ detail }) => setCloneFullClone(detail.selectedOption)}
+              options={cloneModeOptions}
+            />
+          </FormField>
+          <FormField label={t("vms.description")}>
+            <Textarea value={cloneDescription} onChange={({ detail }) => setCloneDescription(detail.value)} rows={4} />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={createSnapshotModalVisible}
+        onDismiss={() => {
+          setCreateSnapshotModalVisible(false);
+          setSnapshotError(null);
+        }}
+        header={t("vms.createSnapshot")}
+        closeAriaLabel={t("vms.createSnapshot")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setCreateSnapshotModalVisible(false);
+                  setSnapshotError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={snapshotLoading} onClick={() => void createSnapshot()}>
+                {t("vms.createSnapshot")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {snapshotError ? (
+            <Alert type="error" header={t("vms.failedToCreateSnapshot")}>
+              {snapshotError}
+            </Alert>
+          ) : null}
+          <FormField label={t("vms.snapshotName")}>
+            <Input value={snapshotName} onChange={({ detail }) => setSnapshotName(detail.value)} />
+          </FormField>
+          <FormField label={t("vms.snapshotDescription")}>
+            <Textarea value={snapshotDescription} onChange={({ detail }) => setSnapshotDescription(detail.value)} rows={4} />
+          </FormField>
+          <Checkbox checked={snapshotVmState} onChange={({ detail }) => setSnapshotVmState(detail.checked)}>
+            {t("vms.includeVmState")}
+          </Checkbox>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={deleteSnapshotModalVisible}
+        onDismiss={() => {
+          setDeleteSnapshotModalVisible(false);
+          setSelectedSnapshot(null);
+          setSnapshotError(null);
+        }}
+        header={t("vms.deleteSnapshot")}
+        closeAriaLabel={t("vms.deleteSnapshot")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setDeleteSnapshotModalVisible(false);
+                  setSelectedSnapshot(null);
+                  setSnapshotError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={snapshotLoading} onClick={() => void deleteSnapshot()}>
+                {t("common.confirm")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {snapshotError ? (
+            <Alert type="error" header={t("vms.failedToDeleteSnapshot")}>
+              {snapshotError}
+            </Alert>
+          ) : null}
+          <Box>{t("vms.confirmDeleteSnapshot").replace("{name}", selectedSnapshot?.name ?? "")}</Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={rollbackSnapshotModalVisible}
+        onDismiss={() => {
+          setRollbackSnapshotModalVisible(false);
+          setSelectedSnapshot(null);
+          setSnapshotError(null);
+        }}
+        header={t("vms.rollbackSnapshot")}
+        closeAriaLabel={t("vms.rollbackSnapshot")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setRollbackSnapshotModalVisible(false);
+                  setSelectedSnapshot(null);
+                  setSnapshotError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={snapshotLoading} onClick={() => void rollbackSnapshot()}>
+                {t("common.confirm")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {snapshotError ? (
+            <Alert type="error" header={t("vms.failedToRollbackSnapshot")}>
+              {snapshotError}
+            </Alert>
+          ) : null}
+          <Alert type="warning" header={t("vms.rollbackSnapshot")}>
+            {t("vms.confirmRollbackSnapshot").replace("{name}", selectedSnapshot?.name ?? "")}
+          </Alert>
+        </SpaceBetween>
+      </Modal>
       <Modal
         visible={editModalVisible}
         onDismiss={() => {

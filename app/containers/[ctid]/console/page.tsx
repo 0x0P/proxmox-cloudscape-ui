@@ -88,9 +88,6 @@ export default function ContainerConsolePage() {
         setContainerName(resource.name ?? null);
         if (cancelled) return;
 
-        const relayHost = window.location.hostname;
-        const wsUrl = `ws://${relayHost}:${config.wsRelayPort}/?node=${resource.node}&vmid=${vmid}&type=lxc`;
-
         const consoleRes = await fetch("/api/console", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -101,6 +98,18 @@ export default function ContainerConsolePage() {
         if (consoleData.error) throw new Error(consoleData.error);
 
         if (cancelled) return;
+
+        const relayHost = window.location.hostname;
+        const wsParams = new URLSearchParams({
+          node: resource.node,
+          vmid: String(vmid),
+          type: "lxc",
+          authTicket: consoleData.authTicket,
+          vncTicket: consoleData.vncTicket,
+          port: String(consoleData.port),
+        });
+        const wsUrl = `ws://${relayHost}:${config.wsRelayPort}/?${wsParams.toString()}`;
+
         setSession({ wsUrl, vncPassword: consoleData.vncTicket });
       } catch (err) {
         if (cancelled) return;

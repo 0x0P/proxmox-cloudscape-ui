@@ -1,11 +1,12 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Alert from "@cloudscape-design/components/alert";
 import AreaChart from "@cloudscape-design/components/area-chart";
 import Box from "@cloudscape-design/components/box";
 import Button from "@cloudscape-design/components/button";
+import Checkbox from "@cloudscape-design/components/checkbox";
 import ColumnLayout from "@cloudscape-design/components/column-layout";
 import Flashbar, { type FlashbarProps } from "@cloudscape-design/components/flashbar";
 import FormField from "@cloudscape-design/components/form-field";
@@ -13,12 +14,14 @@ import Header from "@cloudscape-design/components/header";
 import Input from "@cloudscape-design/components/input";
 import KeyValuePairs from "@cloudscape-design/components/key-value-pairs";
 import Modal from "@cloudscape-design/components/modal";
+import Select, { type SelectProps } from "@cloudscape-design/components/select";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import Spinner from "@cloudscape-design/components/spinner";
 import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import Table, { type TableProps } from "@cloudscape-design/components/table";
 import Tabs, { type TabsProps } from "@cloudscape-design/components/tabs";
 import Textarea from "@cloudscape-design/components/textarea";
+import Toggle from "@cloudscape-design/components/toggle";
 import { useTranslation } from "@/app/lib/use-translation";
 
 interface PveResource {
@@ -74,6 +77,20 @@ interface ContainerDetailData {
   rrd: PveRrdPoint[];
 }
 
+interface NodeSummary {
+  node: string;
+  status: string;
+}
+
+interface ClusterNextId {
+  vmid?: number | string;
+}
+
+interface StorageSummary {
+  storage: string;
+  content?: string;
+}
+
 interface NetworkInterfaceRow {
   id: string;
   interface: string;
@@ -84,6 +101,115 @@ interface NetworkInterfaceRow {
   rateLimit: string;
   vlanTag: string;
 }
+
+interface ContainerOptionsFormState {
+  onboot: boolean;
+  protection: boolean;
+  cmode: string;
+}
+
+interface ContainerDnsConfig {
+  nameserver?: ContainerConfigValue | null;
+  searchdomain?: ContainerConfigValue | null;
+}
+
+interface ContainerDnsFormState {
+  nameserver: string;
+  searchdomain: string;
+}
+
+interface ContainerFirewallRule {
+  pos: number;
+  type?: string;
+  action?: string;
+  proto?: string;
+  source?: string;
+  dest?: string;
+  dport?: string;
+  comment?: string;
+  enable?: number | boolean;
+}
+
+interface ContainerFirewallOptions {
+  enable?: number | boolean;
+  dhcp?: number | boolean;
+  macfilter?: number | boolean;
+  policy_in?: string;
+  policy_out?: string;
+}
+
+interface ContainerFirewallOptionsFormState {
+  enable: boolean;
+  dhcp: boolean;
+  macfilter: boolean;
+  policyIn: string;
+  policyOut: string;
+}
+
+interface ContainerFirewallRuleFormState {
+  type: string;
+  action: string;
+  proto: string;
+  source: string;
+  dest: string;
+  dport: string;
+  comment: string;
+  enable: boolean;
+}
+
+interface BackupStorageSummary {
+  storage: string;
+  content?: string;
+  active?: number;
+  status?: string;
+}
+
+interface ContainerBackupContent {
+  volid: string;
+  ctime?: number;
+  size?: number;
+  notes?: string;
+  content?: string;
+}
+
+interface ContainerBackupRow {
+  id: string;
+  storage: string;
+  volid: string;
+  ctime?: number;
+  size?: number;
+  notes?: string;
+}
+
+const EMPTY_CONTAINER_OPTIONS_FORM: ContainerOptionsFormState = {
+  onboot: false,
+  protection: false,
+  cmode: "console",
+};
+
+const EMPTY_DNS_FORM: ContainerDnsFormState = {
+  nameserver: "",
+  searchdomain: "",
+};
+
+const EMPTY_FIREWALL_OPTIONS_FORM: ContainerFirewallOptionsFormState = {
+  enable: false,
+  dhcp: false,
+  macfilter: false,
+  policyIn: "DROP",
+  policyOut: "ACCEPT",
+};
+
+const EMPTY_FIREWALL_RULE_FORM: ContainerFirewallRuleFormState = {
+  type: "in",
+  action: "ACCEPT",
+  proto: "",
+  source: "",
+  dest: "",
+  dport: "",
+  comment: "",
+  enable: true,
+};
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -153,6 +279,97 @@ function getConfigStringValue(value: ContainerConfigValue | null | undefined): s
   return "";
 }
 
+function optionValue(option: SelectProps.Option | null): string {
+  return option?.value ?? "";
+}
+
+function encodeFormBody(params: URLSearchParams) {
+  return {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+    },
+    body: params.toString(),
+  };
+}
+
+function interpolate(template: string, values: Record<string, string | number>) {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.replaceAll(`{${key}}`, String(value)),
+    template,
+  );
+}
+
+function isEnabled(value?: number | boolean | null) {
+  return value === 1 || value === true;
+}
+
+function getTextValue(value?: string, fallback = "-") {
+  return value?.trim() ? value : fallback;
+}
+
+function isStorageActive(storage: Pick<BackupStorageSummary, "active" | "status">) {
+  return storage.active === 1 || storage.status === "active" || storage.status === undefined;
+}
+
+function renderCenteredState(title: string, description: string, action?: ReactNode) {
+  return (
+    <Box margin={{ vertical: "xs" }} textAlign="center" color="inherit">
+      <SpaceBetween size="m">
+        <b>{title}</b>
+        <Box variant="p" color="inherit">
+          {description}
+        </Box>
+        {action ?? null}
+      </SpaceBetween>
+    </Box>
+  );
+}
+
+function buildContainerOptionsForm(config: PveContainerConfig): ContainerOptionsFormState {
+  return {
+    onboot: isEnabled(config.onboot as number | boolean | null | undefined),
+    protection: isEnabled(config.protection as number | boolean | null | undefined),
+    cmode: getConfigStringValue(config.cmode) || "console",
+  };
+}
+
+function buildDnsForm(config: ContainerDnsConfig | PveContainerConfig | null): ContainerDnsFormState {
+  return {
+    nameserver: getConfigStringValue(config?.nameserver),
+    searchdomain: getConfigStringValue(config?.searchdomain),
+  };
+}
+
+function buildFirewallOptionsForm(options: ContainerFirewallOptions | null): ContainerFirewallOptionsFormState {
+  return {
+    enable: isEnabled(options?.enable),
+    dhcp: isEnabled(options?.dhcp),
+    macfilter: isEnabled(options?.macfilter),
+    policyIn: options?.policy_in ?? "DROP",
+    policyOut: options?.policy_out ?? "ACCEPT",
+  };
+}
+
+function buildFirewallRuleForm(rule: ContainerFirewallRule | null): ContainerFirewallRuleFormState {
+  return {
+    type: rule?.type ?? "in",
+    action: rule?.action ?? "ACCEPT",
+    proto: rule?.proto ?? "",
+    source: rule?.source ?? "",
+    dest: rule?.dest ?? "",
+    dport: rule?.dport ?? "",
+    comment: rule?.comment ?? "",
+    enable: isEnabled(rule?.enable ?? true),
+  };
+}
+
+function storageSupportsContent(storage: StorageSummary, contentType: string): boolean {
+  return (storage.content ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .includes(contentType);
+}
+
 function parseNetworkConfigEntry(entry: string): Record<string, string> {
   return entry.split(",").reduce<Record<string, string>>((accumulator, part) => {
     const [rawKey, ...rawValue] = part.split("=");
@@ -216,10 +433,74 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
   const [configError, setConfigError] = useState<string | null>(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [createSnapshotModalVisible, setCreateSnapshotModalVisible] = useState(false);
+  const [deleteSnapshotModalVisible, setDeleteSnapshotModalVisible] = useState(false);
+  const [rollbackSnapshotModalVisible, setRollbackSnapshotModalVisible] = useState(false);
+  const [migrateModalVisible, setMigrateModalVisible] = useState(false);
+  const [cloneModalVisible, setCloneModalVisible] = useState(false);
   const [editCores, setEditCores] = useState("");
   const [editMemory, setEditMemory] = useState("");
   const [editSwap, setEditSwap] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [snapshotName, setSnapshotName] = useState("");
+  const [snapshotDescription, setSnapshotDescription] = useState("");
+  const [selectedSnapshot, setSelectedSnapshot] = useState<PveSnapshot | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [migrateTargetNode, setMigrateTargetNode] = useState<SelectProps.Option | null>(null);
+  const [migrateOnline, setMigrateOnline] = useState(false);
+  const [cloneNewId, setCloneNewId] = useState("");
+  const [cloneName, setCloneName] = useState("");
+  const [cloneTargetNode, setCloneTargetNode] = useState<SelectProps.Option | null>(null);
+  const [cloneTargetStorage, setCloneTargetStorage] = useState<SelectProps.Option | null>(null);
+  const [cloneFullClone, setCloneFullClone] = useState<SelectProps.Option | null>({
+    label: t("containers.fullClone"),
+    value: "full",
+  });
+  const [cloneDescription, setCloneDescription] = useState("");
+  const [migrateLoading, setMigrateLoading] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
+  const [migrateError, setMigrateError] = useState<string | null>(null);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [availableNodes, setAvailableNodes] = useState<ReadonlyArray<SelectProps.Option>>([]);
+  const [availableStorages, setAvailableStorages] = useState<ReadonlyArray<SelectProps.Option>>([]);
+  const [loadingNodes, setLoadingNodes] = useState(false);
+  const [loadingStorages, setLoadingStorages] = useState(false);
+  const [optionsModalVisible, setOptionsModalVisible] = useState(false);
+  const [optionsSaveLoading, setOptionsSaveLoading] = useState(false);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [optionsForm, setOptionsForm] = useState<ContainerOptionsFormState>(EMPTY_CONTAINER_OPTIONS_FORM);
+  const [dnsConfig, setDnsConfig] = useState<ContainerDnsConfig | null>(null);
+  const [dnsLoading, setDnsLoading] = useState(false);
+  const [dnsInitialized, setDnsInitialized] = useState(false);
+  const [dnsModalVisible, setDnsModalVisible] = useState(false);
+  const [dnsSaveLoading, setDnsSaveLoading] = useState(false);
+  const [dnsError, setDnsError] = useState<string | null>(null);
+  const [dnsForm, setDnsForm] = useState<ContainerDnsFormState>(EMPTY_DNS_FORM);
+  const [firewallRules, setFirewallRules] = useState<ContainerFirewallRule[]>([]);
+  const [firewallOptions, setFirewallOptions] = useState<ContainerFirewallOptions | null>(null);
+  const [firewallRulesLoading, setFirewallRulesLoading] = useState(false);
+  const [firewallOptionsLoading, setFirewallOptionsLoading] = useState(false);
+  const [firewallInitialized, setFirewallInitialized] = useState(false);
+  const [firewallRulesError, setFirewallRulesError] = useState<string | null>(null);
+  const [firewallOptionsError, setFirewallOptionsError] = useState<string | null>(null);
+  const [firewallActionError, setFirewallActionError] = useState<string | null>(null);
+  const [firewallSubmitting, setFirewallSubmitting] = useState(false);
+  const [selectedFirewallRule, setSelectedFirewallRule] = useState<ContainerFirewallRule | null>(null);
+  const [firewallRuleForm, setFirewallRuleForm] = useState<ContainerFirewallRuleFormState>(EMPTY_FIREWALL_RULE_FORM);
+  const [firewallOptionsForm, setFirewallOptionsForm] = useState<ContainerFirewallOptionsFormState>(EMPTY_FIREWALL_OPTIONS_FORM);
+  const [createFirewallRuleVisible, setCreateFirewallRuleVisible] = useState(false);
+  const [editFirewallRuleVisible, setEditFirewallRuleVisible] = useState(false);
+  const [deleteFirewallRuleVisible, setDeleteFirewallRuleVisible] = useState(false);
+  const [editFirewallOptionsVisible, setEditFirewallOptionsVisible] = useState(false);
+  const [backups, setBackups] = useState<ContainerBackupRow[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [backupsInitialized, setBackupsInitialized] = useState(false);
+  const [backupsError, setBackupsError] = useState<string | null>(null);
+  const [backupActionError, setBackupActionError] = useState<string | null>(null);
+  const [backupSubmitting, setBackupSubmitting] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState<ContainerBackupRow | null>(null);
+  const [deleteBackupVisible, setDeleteBackupVisible] = useState(false);
   const yesLabel = t("network.yes");
   const noLabel = t("network.no");
 
@@ -265,6 +546,136 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
   useEffect(() => {
     void loadContainer();
   }, [loadContainer]);
+
+  const cloneModeOptions = useMemo<ReadonlyArray<SelectProps.Option>>(
+    () => [
+      { label: t("containers.fullClone"), value: "full" },
+      { label: t("containers.linkedClone"), value: "linked" },
+    ],
+    [t],
+  );
+
+  const loadAvailableNodes = useCallback(
+    async (excludeCurrentNode: boolean) => {
+      if (!data) {
+        return [] as SelectProps.Option[];
+      }
+
+      const nodes = await fetchProxmox<NodeSummary[]>("/api/proxmox/nodes");
+      return (nodes ?? [])
+        .filter((node) => node.status === "online")
+        .filter((node) => !excludeCurrentNode || node.node !== data.resource.node)
+        .map((node) => ({ label: node.node, value: node.node }))
+        .sort((left, right) => String(left.label).localeCompare(String(right.label)));
+    },
+    [data],
+  );
+
+  const loadCloneStorages = useCallback(async (node: string) => {
+    const storages = await fetchProxmox<StorageSummary[]>(`/api/proxmox/nodes/${node}/storage`);
+    return (storages ?? [])
+      .filter((storage) => storageSupportsContent(storage, "rootdir"))
+      .map((storage) => ({ label: storage.storage, value: storage.storage }))
+      .sort((left, right) => String(left.label).localeCompare(String(right.label)));
+  }, []);
+
+  const loadDnsConfig = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setDnsLoading(true);
+      const config = await fetchProxmox<PveContainerConfig>(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/config`);
+      setDnsConfig({
+        nameserver: config?.nameserver,
+        searchdomain: config?.searchdomain,
+      });
+      setDnsError(null);
+    } catch (loadDnsError) {
+      setDnsError(loadDnsError instanceof Error ? loadDnsError.message : t("containers.failedToUpdateDns"));
+    } finally {
+      setDnsLoading(false);
+    }
+  }, [data, t, vmid]);
+
+  const loadFirewallRules = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setFirewallRulesLoading(true);
+      const nextRules = await fetchProxmox<ContainerFirewallRule[]>(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/firewall/rules`);
+      setFirewallRules((nextRules ?? []).slice().sort((left, right) => left.pos - right.pos));
+      setFirewallRulesError(null);
+    } catch (loadRulesError) {
+      setFirewallRulesError(loadRulesError instanceof Error ? loadRulesError.message : t("containers.failedToLoadFirewallRules"));
+    } finally {
+      setFirewallRulesLoading(false);
+    }
+  }, [data, t, vmid]);
+
+  const loadFirewallOptions = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setFirewallOptionsLoading(true);
+      const nextOptions = await fetchProxmox<ContainerFirewallOptions>(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/firewall/options`);
+      setFirewallOptions(nextOptions ?? {});
+      setFirewallOptionsError(null);
+    } catch (loadOptionsError) {
+      setFirewallOptionsError(loadOptionsError instanceof Error ? loadOptionsError.message : t("containers.failedToLoadFirewallOptions"));
+    } finally {
+      setFirewallOptionsLoading(false);
+    }
+  }, [data, t, vmid]);
+
+  const loadFirewallData = useCallback(async () => {
+    await Promise.all([loadFirewallRules(), loadFirewallOptions()]);
+  }, [loadFirewallOptions, loadFirewallRules]);
+
+  const loadBackups = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setBackupsLoading(true);
+      const storages = await fetchProxmox<BackupStorageSummary[]>(`/api/proxmox/nodes/${data.resource.node}/storage`);
+      const backupStorages = (storages ?? []).filter(
+        (storage) => isStorageActive(storage) && storageSupportsContent(storage, "backup"),
+      );
+
+      const backupLists = await Promise.all(
+        backupStorages.map(async ({ storage }) => {
+          const entries = await fetchProxmox<ContainerBackupContent[]>(
+            `/api/proxmox/nodes/${data.resource.node}/storage/${storage}/content?content=backup&vmid=${vmid}`,
+          );
+
+          return (entries ?? [])
+            .filter((entry) => entry.content === "backup" || entry.volid.includes("vzdump-"))
+            .map((entry) => ({
+              id: `${storage}:${entry.volid}`,
+              storage,
+              volid: entry.volid,
+              ctime: entry.ctime,
+              size: entry.size,
+              notes: entry.notes,
+            } satisfies ContainerBackupRow));
+        }),
+      );
+
+      setBackups(backupLists.flat().sort((left, right) => (right.ctime ?? 0) - (left.ctime ?? 0)));
+      setBackupsError(null);
+    } catch (loadBackupsError) {
+      setBackupsError(loadBackupsError instanceof Error ? loadBackupsError.message : t("containers.failedToLoadBackups"));
+    } finally {
+      setBackupsLoading(false);
+    }
+  }, [data, t, vmid]);
 
   const handlePowerAction = useCallback(
     async (action: "start" | "stop" | "reboot") => {
@@ -383,6 +794,745 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
     }
   }, [data, editCores, editDescription, editMemory, editSwap, loadContainer, t, vmid]);
 
+  const openCreateSnapshotModal = useCallback(() => {
+    setSnapshotName("");
+    setSnapshotDescription("");
+    setSnapshotError(null);
+    setCreateSnapshotModalVisible(true);
+  }, []);
+
+  const openDeleteSnapshotModal = useCallback((snapshot: PveSnapshot) => {
+    setSelectedSnapshot(snapshot);
+    setSnapshotError(null);
+    setDeleteSnapshotModalVisible(true);
+  }, []);
+
+  const openRollbackSnapshotModal = useCallback((snapshot: PveSnapshot) => {
+    setSelectedSnapshot(snapshot);
+    setSnapshotError(null);
+    setRollbackSnapshotModalVisible(true);
+  }, []);
+
+  const openMigrateModal = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setLoadingNodes(true);
+      setMigrateError(null);
+      const nodes = await loadAvailableNodes(true);
+      setAvailableNodes(nodes);
+      setMigrateTargetNode(nodes[0] ?? null);
+      setMigrateOnline(data.resource.status === "running");
+      setMigrateModalVisible(true);
+    } catch (loadError) {
+      setMigrateError(loadError instanceof Error ? loadError.message : t("containers.failedToMigrate"));
+      setMigrateModalVisible(true);
+    } finally {
+      setLoadingNodes(false);
+    }
+  }, [data, loadAvailableNodes, t]);
+
+  const openCloneModal = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setLoadingNodes(true);
+      setCloneError(null);
+      const [nodes, nextId] = await Promise.all([
+        loadAvailableNodes(false),
+        fetchProxmox<number | string | ClusterNextId>("/api/proxmox/cluster/nextid"),
+      ]);
+      const normalizedNextId =
+        typeof nextId === "object" && nextId !== null && "vmid" in nextId ? nextId.vmid : nextId;
+      const defaultNode = nodes.find((node) => node.value === data.resource.node) ?? nodes[0] ?? null;
+      setAvailableNodes(nodes);
+      setCloneNewId(normalizedNextId ? String(normalizedNextId) : "");
+      setCloneName("");
+      setCloneTargetNode(defaultNode);
+      setCloneTargetStorage(null);
+      setAvailableStorages([]);
+      setCloneFullClone({ label: t("containers.fullClone"), value: "full" });
+      setCloneDescription("");
+      setCloneModalVisible(true);
+    } catch (loadError) {
+      setCloneError(loadError instanceof Error ? loadError.message : t("containers.failedToClone"));
+      setCloneModalVisible(true);
+    } finally {
+      setLoadingNodes(false);
+    }
+  }, [data, loadAvailableNodes, t]);
+
+  const createSnapshot = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    if (!snapshotName.trim()) {
+      setSnapshotError(t("containers.snapshotNameRequired"));
+      return;
+    }
+
+    try {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+
+      const name = snapshotName.trim();
+      const body = new URLSearchParams({
+        snapname: name,
+        description: snapshotDescription,
+      });
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/snapshot`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.snapshotCreated").replace("{name}", name),
+          dismissible: true,
+          id: "container-snapshot-created",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setCreateSnapshotModalVisible(false);
+      setSnapshotName("");
+      setSnapshotDescription("");
+      await loadContainer();
+    } catch (createError) {
+      setSnapshotError(createError instanceof Error ? createError.message : t("containers.failedToCreateSnapshot"));
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [data, loadContainer, snapshotDescription, snapshotName, t, vmid]);
+
+  const deleteSnapshot = useCallback(async () => {
+    if (!data || !selectedSnapshot) {
+      return;
+    }
+
+    try {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/snapshot/${selectedSnapshot.name}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.snapshotDeleted").replace("{name}", selectedSnapshot.name),
+          dismissible: true,
+          id: "container-snapshot-deleted",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setDeleteSnapshotModalVisible(false);
+      setSelectedSnapshot(null);
+      await loadContainer();
+    } catch (deleteError) {
+      setSnapshotError(deleteError instanceof Error ? deleteError.message : t("containers.failedToDeleteSnapshot"));
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [data, loadContainer, selectedSnapshot, t, vmid]);
+
+  const rollbackSnapshot = useCallback(async () => {
+    if (!data || !selectedSnapshot) {
+      return;
+    }
+
+    try {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/snapshot/${selectedSnapshot.name}/rollback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.snapshotRolledBack").replace("{name}", selectedSnapshot.name),
+          dismissible: true,
+          id: "container-snapshot-rolled-back",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setRollbackSnapshotModalVisible(false);
+      setSelectedSnapshot(null);
+      await loadContainer();
+    } catch (rollbackError) {
+      setSnapshotError(rollbackError instanceof Error ? rollbackError.message : t("containers.failedToRollbackSnapshot"));
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [data, loadContainer, selectedSnapshot, t, vmid]);
+
+  useEffect(() => {
+    const targetNode = optionValue(cloneTargetNode);
+
+    if (!cloneModalVisible || !targetNode) {
+      setAvailableStorages([]);
+      setCloneTargetStorage(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        setLoadingStorages(true);
+        const storages = await loadCloneStorages(targetNode);
+
+        if (cancelled) {
+          return;
+        }
+
+        setAvailableStorages(storages);
+        setCloneTargetStorage((current) =>
+          current && storages.some((storage) => storage.value === current.value) ? current : null,
+        );
+      } catch (loadError) {
+        if (!cancelled) {
+          setCloneError(loadError instanceof Error ? loadError.message : t("containers.failedToClone"));
+          setAvailableStorages([]);
+          setCloneTargetStorage(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingStorages(false);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cloneModalVisible, cloneTargetNode, loadCloneStorages, t]);
+
+  useEffect(() => {
+    setDnsConfig(null);
+    setDnsInitialized(false);
+    setDnsError(null);
+    setFirewallRules([]);
+    setFirewallOptions(null);
+    setFirewallInitialized(false);
+    setFirewallRulesError(null);
+    setFirewallOptionsError(null);
+    setFirewallActionError(null);
+    setBackups([]);
+    setBackupsInitialized(false);
+    setBackupsError(null);
+    setBackupActionError(null);
+  }, [data?.resource.node, vmid]);
+
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+
+    if (activeTabId === "dns" && !dnsInitialized) {
+      setDnsInitialized(true);
+      void loadDnsConfig();
+    }
+
+    if (activeTabId === "firewall" && !firewallInitialized) {
+      setFirewallInitialized(true);
+      void loadFirewallData();
+    }
+
+    if (activeTabId === "backup" && !backupsInitialized) {
+      setBackupsInitialized(true);
+      void loadBackups();
+    }
+  }, [activeTabId, backupsInitialized, data, dnsInitialized, firewallInitialized, loadBackups, loadDnsConfig, loadFirewallData]);
+
+  const consoleModeOptions = [
+    { label: t("containers.consoleModeConsole"), value: "console" },
+    { label: t("containers.consoleModeShell"), value: "shell" },
+    { label: t("containers.consoleModeTty"), value: "tty" },
+  ];
+
+  const firewallTypeOptions = [
+    { label: t("firewall.typeIn"), value: "in" },
+    { label: t("firewall.typeOut"), value: "out" },
+    { label: t("firewall.typeGroup"), value: "group" },
+  ];
+
+  const firewallActionOptions = [
+    { label: t("firewall.actionAccept"), value: "ACCEPT" },
+    { label: t("firewall.actionDrop"), value: "DROP" },
+    { label: t("firewall.actionReject"), value: "REJECT" },
+  ];
+
+  const firewallProtocolOptions = [
+    { label: t("firewall.anyProtocol"), value: "" },
+    { label: "TCP", value: "tcp" },
+    { label: "UDP", value: "udp" },
+    { label: "ICMP", value: "icmp" },
+    { label: "ICMPv6", value: "icmpv6" },
+  ];
+
+  const firewallTypeLabel = (value?: string) => {
+    switch ((value ?? "").toLowerCase()) {
+      case "in":
+        return t("firewall.typeIn");
+      case "out":
+        return t("firewall.typeOut");
+      case "group":
+        return t("firewall.typeGroup");
+      default:
+        return getTextValue(value, t("cluster.common.none"));
+    }
+  };
+
+  const firewallActionLabel = (value?: string) => {
+    switch ((value ?? "").toUpperCase()) {
+      case "ACCEPT":
+        return t("firewall.actionAccept");
+      case "DROP":
+        return t("firewall.actionDrop");
+      case "REJECT":
+        return t("firewall.actionReject");
+      default:
+        return getTextValue(value, t("cluster.common.none"));
+    }
+  };
+
+  const consoleModeLabel = (value?: string) => {
+    switch ((value ?? "").toLowerCase()) {
+      case "console":
+        return t("containers.consoleModeConsole");
+      case "shell":
+        return t("containers.consoleModeShell");
+      case "tty":
+        return t("containers.consoleModeTty");
+      default:
+        return getTextValue(value, t("cluster.common.none"));
+    }
+  };
+
+  const openOptionsModal = () => {
+    if (!data) {
+      return;
+    }
+
+    setOptionsForm(buildContainerOptionsForm(data.config));
+    setOptionsError(null);
+    setOptionsModalVisible(true);
+  };
+
+  const saveOptions = async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setOptionsSaveLoading(true);
+      setOptionsError(null);
+      const params = new URLSearchParams();
+      params.set("onboot", optionsForm.onboot ? "1" : "0");
+      params.set("protection", optionsForm.protection ? "1" : "0");
+      params.set("cmode", optionsForm.cmode || "console");
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/config`, {
+        method: "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.optionsUpdated"),
+          dismissible: true,
+          id: "container-options-updated",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setOptionsModalVisible(false);
+      await loadContainer();
+    } catch (saveError) {
+      setOptionsError(saveError instanceof Error ? saveError.message : t("containers.failedToUpdateOptions"));
+    } finally {
+      setOptionsSaveLoading(false);
+    }
+  };
+
+  const openDnsModal = () => {
+    setDnsForm(buildDnsForm(dnsConfig ?? data?.config ?? null));
+    setDnsError(null);
+    setDnsModalVisible(true);
+  };
+
+  const saveDns = async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setDnsSaveLoading(true);
+      setDnsError(null);
+      const params = new URLSearchParams();
+      params.set("nameserver", dnsForm.nameserver.trim());
+      params.set("searchdomain", dnsForm.searchdomain.trim());
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/config`, {
+        method: "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.dnsUpdated"),
+          dismissible: true,
+          id: "container-dns-updated",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setDnsModalVisible(false);
+      await Promise.all([loadDnsConfig(), loadContainer()]);
+    } catch (saveError) {
+      setDnsError(saveError instanceof Error ? saveError.message : t("containers.failedToUpdateDns"));
+    } finally {
+      setDnsSaveLoading(false);
+    }
+  };
+
+  const openCreateFirewallRuleModal = () => {
+    setSelectedFirewallRule(null);
+    setFirewallRuleForm(EMPTY_FIREWALL_RULE_FORM);
+    setFirewallActionError(null);
+    setCreateFirewallRuleVisible(true);
+  };
+
+  const openEditFirewallRuleModal = (rule: ContainerFirewallRule) => {
+    setSelectedFirewallRule(rule);
+    setFirewallRuleForm(buildFirewallRuleForm(rule));
+    setFirewallActionError(null);
+    setEditFirewallRuleVisible(true);
+  };
+
+  const openDeleteFirewallRuleModal = (rule: ContainerFirewallRule) => {
+    setSelectedFirewallRule(rule);
+    setFirewallActionError(null);
+    setDeleteFirewallRuleVisible(true);
+  };
+
+  const openEditFirewallOptionsModal = () => {
+    setFirewallOptionsForm(buildFirewallOptionsForm(firewallOptions));
+    setFirewallActionError(null);
+    setEditFirewallOptionsVisible(true);
+  };
+
+  const submitFirewallRule = async (mode: "create" | "edit") => {
+    if (!data) {
+      return;
+    }
+
+    if (mode === "edit" && !selectedFirewallRule) {
+      setFirewallActionError(t("containers.failedToUpdateFirewallRule"));
+      return;
+    }
+
+    try {
+      setFirewallSubmitting(true);
+      setFirewallActionError(null);
+      const params = new URLSearchParams();
+      params.set("type", firewallRuleForm.type || "in");
+      params.set("action", firewallRuleForm.action || "ACCEPT");
+      params.set("enable", firewallRuleForm.enable ? "1" : "0");
+      if (firewallRuleForm.proto.trim()) params.set("proto", firewallRuleForm.proto.trim());
+      if (firewallRuleForm.source.trim()) params.set("source", firewallRuleForm.source.trim());
+      if (firewallRuleForm.dest.trim()) params.set("dest", firewallRuleForm.dest.trim());
+      if (firewallRuleForm.dport.trim()) params.set("dport", firewallRuleForm.dport.trim());
+      if (firewallRuleForm.comment.trim()) params.set("comment", firewallRuleForm.comment.trim());
+
+      const path = mode === "create"
+        ? `/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/firewall/rules`
+        : `/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/firewall/rules/${selectedFirewallRule?.pos ?? 0}`;
+
+      await fetchProxmox(path, {
+        method: mode === "create" ? "POST" : "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: mode === "create" ? t("containers.firewallRuleCreated") : t("containers.firewallRuleUpdated"),
+          dismissible: true,
+          id: `container-firewall-rule-${mode}`,
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setCreateFirewallRuleVisible(false);
+      setEditFirewallRuleVisible(false);
+      await loadFirewallRules();
+    } catch (submitError) {
+      setFirewallActionError(
+        submitError instanceof Error
+          ? submitError.message
+          : mode === "create"
+            ? t("containers.failedToCreateFirewallRule")
+            : t("containers.failedToUpdateFirewallRule"),
+      );
+    } finally {
+      setFirewallSubmitting(false);
+    }
+  };
+
+  const deleteFirewallRule = async () => {
+    if (!data || !selectedFirewallRule) {
+      return;
+    }
+
+    try {
+      setFirewallSubmitting(true);
+      setFirewallActionError(null);
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/firewall/rules/${selectedFirewallRule.pos}`, {
+        method: "DELETE",
+        ...encodeFormBody(new URLSearchParams()),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.firewallRuleDeleted"),
+          dismissible: true,
+          id: "container-firewall-rule-deleted",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setDeleteFirewallRuleVisible(false);
+      setSelectedFirewallRule(null);
+      await loadFirewallRules();
+    } catch (deleteError) {
+      setFirewallActionError(deleteError instanceof Error ? deleteError.message : t("containers.failedToDeleteFirewallRule"));
+    } finally {
+      setFirewallSubmitting(false);
+    }
+  };
+
+  const saveFirewallOptions = async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setFirewallSubmitting(true);
+      setFirewallActionError(null);
+      const params = new URLSearchParams();
+      params.set("enable", firewallOptionsForm.enable ? "1" : "0");
+      params.set("dhcp", firewallOptionsForm.dhcp ? "1" : "0");
+      params.set("macfilter", firewallOptionsForm.macfilter ? "1" : "0");
+      params.set("policy_in", firewallOptionsForm.policyIn || "DROP");
+      params.set("policy_out", firewallOptionsForm.policyOut || "ACCEPT");
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/firewall/options`, {
+        method: "PUT",
+        ...encodeFormBody(params),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.firewallOptionsUpdated"),
+          dismissible: true,
+          id: "container-firewall-options-updated",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setEditFirewallOptionsVisible(false);
+      await loadFirewallOptions();
+    } catch (saveError) {
+      setFirewallActionError(saveError instanceof Error ? saveError.message : t("containers.failedToUpdateFirewallOptions"));
+    } finally {
+      setFirewallSubmitting(false);
+    }
+  };
+
+  const openDeleteBackupModal = (backup: ContainerBackupRow) => {
+    setSelectedBackup(backup);
+    setBackupActionError(null);
+    setDeleteBackupVisible(true);
+  };
+
+  const deleteBackup = async () => {
+    if (!data || !selectedBackup) {
+      return;
+    }
+
+    try {
+      setBackupSubmitting(true);
+      setBackupActionError(null);
+      await fetchProxmox(
+        `/api/proxmox/nodes/${data.resource.node}/storage/${selectedBackup.storage}/content/${encodeURIComponent(selectedBackup.volid)}`,
+        {
+          method: "DELETE",
+          ...encodeFormBody(new URLSearchParams()),
+        },
+      );
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.backupDeleted"),
+          dismissible: true,
+          id: "container-backup-deleted",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setDeleteBackupVisible(false);
+      setSelectedBackup(null);
+      await loadBackups();
+    } catch (deleteError) {
+      setBackupActionError(deleteError instanceof Error ? deleteError.message : t("containers.failedToDeleteBackup"));
+    } finally {
+      setBackupSubmitting(false);
+    }
+  };
+
+  const submitMigration = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    const targetNode = optionValue(migrateTargetNode);
+
+    if (!targetNode) {
+      setMigrateError(t("containers.targetNodeRequired"));
+      return;
+    }
+
+    try {
+      setMigrateLoading(true);
+      setMigrateError(null);
+
+      const body = new URLSearchParams({
+        target: targetNode,
+      });
+
+      if (data.resource.status === "running") {
+        body.set("online", migrateOnline ? "1" : "0");
+      } else {
+        body.set("restart", migrateOnline ? "1" : "0");
+      }
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/migrate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.migrationStarted").replace("{id}", String(vmid)).replace("{node}", targetNode),
+          dismissible: true,
+          id: "container-migration-started",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setMigrateModalVisible(false);
+      await loadContainer();
+    } catch (submitError) {
+      setMigrateError(submitError instanceof Error ? submitError.message : t("containers.failedToMigrate"));
+    } finally {
+      setMigrateLoading(false);
+    }
+  }, [data, loadContainer, migrateOnline, migrateTargetNode, t, vmid]);
+
+  const submitClone = useCallback(async () => {
+    if (!data) {
+      return;
+    }
+
+    const newId = cloneNewId.trim();
+    const targetNode = optionValue(cloneTargetNode);
+    const targetStorage = optionValue(cloneTargetStorage);
+    const fullClone = optionValue(cloneFullClone) !== "linked";
+
+    if (!newId) {
+      setCloneError(t("containers.newIdRequired"));
+      return;
+    }
+
+    if (!targetNode) {
+      setCloneError(t("containers.targetNodeRequired"));
+      return;
+    }
+
+    try {
+      setCloneLoading(true);
+      setCloneError(null);
+
+      const body = new URLSearchParams({
+        newid: newId,
+        target: targetNode,
+        full: fullClone ? "1" : "0",
+      });
+
+      if (cloneName.trim()) {
+        body.set("hostname", cloneName.trim());
+      }
+
+      if (targetStorage) {
+        body.set("storage", targetStorage);
+      }
+
+      if (cloneDescription.trim()) {
+        body.set("description", cloneDescription.trim());
+      }
+
+      await fetchProxmox(`/api/proxmox/nodes/${data.resource.node}/lxc/${vmid}/clone`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      setFlashbarItems([
+        {
+          type: "success",
+          content: t("containers.cloneStarted").replace("{id}", String(vmid)).replace("{newId}", newId),
+          dismissible: true,
+          id: "container-clone-started",
+          onDismiss: () => setFlashbarItems([]),
+        },
+      ]);
+      setCloneModalVisible(false);
+      await loadContainer();
+    } catch (submitError) {
+      setCloneError(submitError instanceof Error ? submitError.message : t("containers.failedToClone"));
+    } finally {
+      setCloneLoading(false);
+    }
+  }, [cloneDescription, cloneFullClone, cloneName, cloneNewId, cloneTargetNode, cloneTargetStorage, data, loadContainer, t, vmid]);
+
   const snapshotColumns = useMemo<TableProps<PveSnapshot>["columnDefinitions"]>(
     () => [
       {
@@ -411,8 +1561,22 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
         header: t("containers.description"),
         cell: ({ description }) => description ?? "-",
       },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        cell: (snapshot) => snapshot.name === "current" ? "-" : (
+          <SpaceBetween size="xs" direction="horizontal">
+            <Button variant="inline-link" onClick={() => openRollbackSnapshotModal(snapshot)}>
+              {t("containers.rollback")}
+            </Button>
+            <Button variant="inline-link" onClick={() => openDeleteSnapshotModal(snapshot)}>
+              {t("containers.deleteSnapshot")}
+            </Button>
+          </SpaceBetween>
+        ),
+      },
     ],
-    [t],
+    [noLabel, openDeleteSnapshotModal, openRollbackSnapshotModal, t, yesLabel],
   );
 
   const taskColumns = useMemo<TableProps<PveTask>["columnDefinitions"]>(
@@ -586,6 +1750,77 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
   const rebootDisabled = resource.status !== "running" || actionLoading !== null;
   const consoleDisabled = resource.status !== "running" || actionLoading !== null;
   const chartDomain = cpuSeries.length > 1 ? [cpuSeries[0].x, cpuSeries[cpuSeries.length - 1].x] : undefined;
+  const optionsDetails = buildContainerOptionsForm(config);
+  const dnsDetails = buildDnsForm(dnsConfig ?? config);
+  const firewallOptionsDetails = buildFirewallOptionsForm(firewallOptions);
+  const optionsItems = [
+    {
+      label: t("containers.startOnBootLabel"),
+      value: <StatusIndicator type={optionsDetails.onboot ? "success" : "stopped"}>{optionsDetails.onboot ? yesLabel : noLabel}</StatusIndicator>,
+    },
+    {
+      label: t("containers.protectionLabel"),
+      value: <StatusIndicator type={optionsDetails.protection ? "success" : "stopped"}>{optionsDetails.protection ? yesLabel : noLabel}</StatusIndicator>,
+    },
+    {
+      label: t("containers.unprivilegedLabel"),
+      value: <StatusIndicator type={isEnabled(config.unprivileged as number | boolean | null | undefined) ? "success" : "stopped"}>{isEnabled(config.unprivileged as number | boolean | null | undefined) ? yesLabel : noLabel}</StatusIndicator>,
+    },
+    {
+      label: t("containers.featuresLabel"),
+      value: getTextValue(getConfigStringValue(config.features), t("cluster.common.none")),
+    },
+    {
+      label: t("containers.consoleModeLabel"),
+      value: consoleModeLabel(getConfigStringValue(config.cmode) || "console"),
+    },
+  ];
+  const dnsItems = [
+    {
+      label: t("containers.dnsServerLabel"),
+      value: getTextValue(dnsDetails.nameserver, t("cluster.common.none")),
+    },
+    {
+      label: t("containers.searchDomainLabel"),
+      value: getTextValue(dnsDetails.searchdomain, t("cluster.common.none")),
+    },
+  ];
+  const firewallRuleColumns: TableProps<ContainerFirewallRule>["columnDefinitions"] = [
+    { id: "pos", header: t("firewall.position"), cell: ({ pos }) => String(pos), isRowHeader: true },
+    { id: "type", header: t("firewall.type"), cell: ({ type }) => firewallTypeLabel(type) },
+    { id: "action", header: t("firewall.action"), cell: ({ action }) => firewallActionLabel(action) },
+    { id: "proto", header: t("firewall.protocol"), cell: ({ proto }) => getTextValue(proto, t("firewall.anyProtocol")) },
+    { id: "source", header: t("firewall.source"), cell: ({ source }) => getTextValue(source, t("cluster.common.none")) },
+    { id: "dest", header: t("firewall.destination"), cell: ({ dest }) => getTextValue(dest, t("cluster.common.none")) },
+    { id: "dport", header: t("firewall.destinationPort"), cell: ({ dport }) => getTextValue(dport, t("cluster.common.none")) },
+    { id: "comment", header: t("firewall.comment"), cell: ({ comment }) => getTextValue(comment, t("cluster.common.none")) },
+    {
+      id: "enable",
+      header: t("firewall.enable"),
+      cell: (rule) => <StatusIndicator type={isEnabled(rule.enable) ? "success" : "stopped"}>{isEnabled(rule.enable) ? t("firewall.enabled") : t("firewall.disabled")}</StatusIndicator>,
+    },
+    {
+      id: "actions",
+      header: t("common.actions"),
+      cell: (rule) => (
+        <SpaceBetween direction="horizontal" size="xs">
+          <Button onClick={() => openEditFirewallRuleModal(rule)}>{t("common.edit")}</Button>
+          <Button onClick={() => openDeleteFirewallRuleModal(rule)}>{t("common.delete")}</Button>
+        </SpaceBetween>
+      ),
+    },
+  ];
+  const backupColumns: TableProps<ContainerBackupRow>["columnDefinitions"] = [
+    { id: "volid", header: t("containers.backupVolid"), cell: ({ volid }) => volid, isRowHeader: true },
+    { id: "ctime", header: t("containers.backupDate"), cell: ({ ctime }) => formatDateTime(ctime) },
+    { id: "size", header: t("containers.backupSize"), cell: ({ size }) => formatBytes(size ?? 0) },
+    { id: "notes", header: t("containers.backupNotes"), cell: ({ notes }) => getTextValue(notes, t("cluster.common.none")) },
+    {
+      id: "actions",
+      header: t("common.actions"),
+      cell: (backup) => <Button onClick={() => openDeleteBackupModal(backup)}>{t("containers.deleteBackup")}</Button>,
+    },
+  ];
   const tabs: TabsProps.Tab[] = [
     {
       id: "summary",
@@ -673,7 +1908,19 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
           items={snapshots}
           columnDefinitions={snapshotColumns}
           empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("containers.noSnapshotsAvailable")}</Box>}
-          header={<Header variant="h2" counter={`(${snapshots.length})`}>{t("containers.snapshots")}</Header>}
+          header={
+            <Header
+              variant="h2"
+              counter={`(${snapshots.length})`}
+              actions={
+                <Button onClick={openCreateSnapshotModal} loading={snapshotLoading} disabled={snapshotLoading}>
+                  {t("containers.createSnapshot")}
+                </Button>
+              }
+            >
+              {t("containers.snapshots")}
+            </Header>
+          }
         />
       ),
     },
@@ -694,6 +1941,157 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
         />
       ),
     },
+    {
+      id: "options",
+      label: t("containers.optionsTab"),
+      content: (
+        <SpaceBetween size="s">
+          <Header
+            variant="h2"
+            actions={
+              <Button onClick={openOptionsModal} disabled={optionsSaveLoading}>
+                {t("containers.editOptions")}
+              </Button>
+            }
+          >
+            {t("containers.optionsTab")}
+          </Header>
+          <KeyValuePairs columns={2} items={optionsItems} />
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "dns",
+      label: t("containers.dnsTab"),
+      content: (
+        <SpaceBetween size="s">
+          <Header
+            variant="h2"
+            actions={
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button iconName="refresh" onClick={() => void loadDnsConfig()} loading={dnsLoading}>
+                  {t("common.refresh")}
+                </Button>
+                <Button onClick={openDnsModal} disabled={dnsLoading}>
+                  {t("containers.editDns")}
+                </Button>
+              </SpaceBetween>
+            }
+          >
+            {t("containers.dnsTab")}
+          </Header>
+          {dnsError ? <Alert type="error">{dnsError}</Alert> : null}
+          {dnsLoading && !dnsConfig ? (
+            <Box>{t("common.loading")}</Box>
+          ) : (
+            <KeyValuePairs columns={2} items={dnsItems} />
+          )}
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "firewall",
+      label: t("containers.firewallTab"),
+      content: (
+        <SpaceBetween size="l">
+          {firewallRulesError ? <Alert type="error">{firewallRulesError}</Alert> : null}
+          {firewallOptionsError ? <Alert type="error">{firewallOptionsError}</Alert> : null}
+          <Table
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="pos"
+            items={firewallRules}
+            columnDefinitions={firewallRuleColumns}
+            loading={firewallRulesLoading}
+            loadingText={t("common.loading")}
+            empty={renderCenteredState(t("firewall.noRules"), t("firewall.noRulesDescription"), <Button onClick={openCreateFirewallRuleModal}>{t("containers.addFirewallRule")}</Button>)}
+            header={
+              <Header
+                variant="h2"
+                counter={`(${firewallRules.length})`}
+                actions={
+                  <SpaceBetween direction="horizontal" size="xs">
+                    <Button iconName="refresh" onClick={() => void loadFirewallRules()} loading={firewallRulesLoading}>
+                      {t("common.refresh")}
+                    </Button>
+                    <Button onClick={openCreateFirewallRuleModal}>{t("containers.addFirewallRule")}</Button>
+                  </SpaceBetween>
+                }
+              >
+                {t("containers.ctFirewallRules")}
+              </Header>
+            }
+          />
+          <SpaceBetween size="s">
+            <Header
+              variant="h2"
+              actions={
+                <SpaceBetween direction="horizontal" size="xs">
+                  <Button iconName="refresh" onClick={() => void loadFirewallOptions()} loading={firewallOptionsLoading}>
+                    {t("common.refresh")}
+                  </Button>
+                  <Button onClick={openEditFirewallOptionsModal} disabled={firewallOptionsLoading}>
+                    {t("containers.editFirewallOptions")}
+                  </Button>
+                </SpaceBetween>
+              }
+            >
+              {t("containers.ctFirewallOptions")}
+            </Header>
+            {firewallOptionsLoading && !firewallOptions ? (
+              <Box>{t("common.loading")}</Box>
+            ) : (
+              <KeyValuePairs
+                columns={2}
+                items={[
+                  { label: t("containers.firewallEnabled"), value: <StatusIndicator type={firewallOptionsDetails.enable ? "success" : "stopped"}>{firewallOptionsDetails.enable ? yesLabel : noLabel}</StatusIndicator> },
+                  { label: t("containers.dhcp"), value: <StatusIndicator type={firewallOptionsDetails.dhcp ? "success" : "stopped"}>{firewallOptionsDetails.dhcp ? yesLabel : noLabel}</StatusIndicator> },
+                  { label: t("containers.macFilter"), value: <StatusIndicator type={firewallOptionsDetails.macfilter ? "success" : "stopped"}>{firewallOptionsDetails.macfilter ? yesLabel : noLabel}</StatusIndicator> },
+                  { label: t("firewall.policyIn"), value: firewallActionLabel(firewallOptionsDetails.policyIn) },
+                  { label: t("firewall.policyOut"), value: firewallActionLabel(firewallOptionsDetails.policyOut) },
+                ]}
+              />
+            )}
+          </SpaceBetween>
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "backup",
+      label: t("containers.backupTab"),
+      content: (
+        <SpaceBetween size="s">
+          {backupsError ? <Alert type="error">{backupsError}</Alert> : null}
+          <Table
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="id"
+            items={backups}
+            columnDefinitions={backupColumns}
+            loading={backupsLoading}
+            loadingText={t("containers.loadingBackups")}
+            empty={renderCenteredState(t("containers.noBackups"), t("containers.ctBackups"))}
+            header={
+              <Header
+                variant="h2"
+                counter={`(${backups.length})`}
+                actions={
+                  <Button iconName="refresh" onClick={() => void loadBackups()} loading={backupsLoading}>
+                    {t("common.refresh")}
+                  </Button>
+                }
+              >
+                {t("containers.ctBackups")}
+              </Header>
+            }
+          />
+        </SpaceBetween>
+      ),
+    },
   ];
 
   return (
@@ -702,6 +2100,11 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
       {actionError ? (
         <Alert type="error" header={t("containers.failedRequest")} dismissible onDismiss={() => setActionError(null)}>
           {actionError}
+        </Alert>
+      ) : null}
+      {snapshotError ? (
+        <Alert type="error" header={t("common.error")} dismissible onDismiss={() => setSnapshotError(null)}>
+          {snapshotError}
         </Alert>
       ) : null}
       <Header
@@ -718,6 +2121,12 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
             <Button loading={actionLoading === "reboot"} disabled={rebootDisabled} onClick={() => void handlePowerAction("reboot")}>
               {t("containers.reboot")}
             </Button>
+            <Button disabled={actionLoading !== null} onClick={() => void openMigrateModal()}>
+              {t("containers.migrate")}
+            </Button>
+            <Button disabled={actionLoading !== null} onClick={() => void openCloneModal()}>
+              {t("containers.clone")}
+            </Button>
             <Button disabled={consoleDisabled} onClick={() => router.push(`/containers/${vmid}/console`)}>
               {t("containers.console")}
             </Button>
@@ -730,6 +2139,249 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
         {(resource.name ?? `${t("containers.containers")} ${vmid}`) + ` · ${t("containers.ctid")} ${vmid}`}
       </Header>
       <Tabs tabs={tabs} activeTabId={activeTabId} onChange={({ detail }) => setActiveTabId(detail.activeTabId)} />
+      <Modal
+        visible={migrateModalVisible}
+        onDismiss={() => {
+          setMigrateModalVisible(false);
+          setMigrateError(null);
+        }}
+        header={t("containers.migrateContainer")}
+        closeAriaLabel={t("containers.migrateContainer")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setMigrateModalVisible(false);
+                  setMigrateError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={migrateLoading} onClick={() => void submitMigration()}>
+                {t("containers.migrate")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {migrateError ? (
+            <Alert type="error" header={t("containers.failedToMigrate")}>
+              {migrateError}
+            </Alert>
+          ) : null}
+          <FormField label={t("containers.targetNode")}>
+            <Select
+              selectedOption={migrateTargetNode}
+              onChange={({ detail }) => setMigrateTargetNode(detail.selectedOption)}
+              options={availableNodes}
+              placeholder={t("containers.targetNode")}
+              statusType={loadingNodes ? "loading" : "finished"}
+              loadingText={t("containers.loadingNodes")}
+              empty={t("containers.noOtherNodes")}
+            />
+          </FormField>
+          <Checkbox checked={migrateOnline} onChange={({ detail }) => setMigrateOnline(detail.checked)}>
+            {data.resource.status === "running" ? t("containers.onlineMigration") : t("containers.restartMigration")}
+          </Checkbox>
+          <Box color="text-body-secondary">
+            {data.resource.status === "running" ? t("containers.onlineMigrationDesc") : t("containers.restartMigrationDesc")}
+          </Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={cloneModalVisible}
+        onDismiss={() => {
+          setCloneModalVisible(false);
+          setCloneError(null);
+        }}
+        header={t("containers.cloneContainer")}
+        closeAriaLabel={t("containers.cloneContainer")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setCloneModalVisible(false);
+                  setCloneError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={cloneLoading} onClick={() => void submitClone()}>
+                {t("containers.clone")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {cloneError ? (
+            <Alert type="error" header={t("containers.failedToClone")}>
+              {cloneError}
+            </Alert>
+          ) : null}
+          <FormField label={t("containers.newCtId")}>
+            <Input type="number" value={cloneNewId} onChange={({ detail }) => setCloneNewId(detail.value)} />
+          </FormField>
+          <FormField label={t("containers.newHostname")}>
+            <Input value={cloneName} onChange={({ detail }) => setCloneName(detail.value)} />
+          </FormField>
+          <FormField label={t("containers.targetNode")}>
+            <Select
+              selectedOption={cloneTargetNode}
+              onChange={({ detail }) => setCloneTargetNode(detail.selectedOption)}
+              options={availableNodes}
+              placeholder={t("containers.targetNode")}
+              statusType={loadingNodes ? "loading" : "finished"}
+              loadingText={t("containers.loadingNodes")}
+            />
+          </FormField>
+          <FormField label={t("containers.targetStorage")} description={t("containers.targetStorageDesc")}>
+            <Select
+              selectedOption={cloneTargetStorage}
+              onChange={({ detail }) => setCloneTargetStorage(detail.selectedOption)}
+              options={availableStorages}
+              placeholder={t("containers.sameStorageHint")}
+              statusType={loadingStorages ? "loading" : "finished"}
+              loadingText={t("containers.loadingStorages")}
+              empty={t("containers.sameStorageHint")}
+            />
+          </FormField>
+          <FormField label={t("containers.cloneMode")}>
+            <Select
+              selectedOption={cloneFullClone}
+              onChange={({ detail }) => setCloneFullClone(detail.selectedOption)}
+              options={cloneModeOptions}
+            />
+          </FormField>
+          <FormField label={t("containers.description")}>
+            <Textarea value={cloneDescription} onChange={({ detail }) => setCloneDescription(detail.value)} rows={4} />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={createSnapshotModalVisible}
+        onDismiss={() => {
+          setCreateSnapshotModalVisible(false);
+          setSnapshotError(null);
+        }}
+        header={t("containers.createSnapshot")}
+        closeAriaLabel={t("containers.createSnapshot")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setCreateSnapshotModalVisible(false);
+                  setSnapshotError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={snapshotLoading} onClick={() => void createSnapshot()}>
+                {t("containers.createSnapshot")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {snapshotError ? (
+            <Alert type="error" header={t("containers.failedToCreateSnapshot")}>
+              {snapshotError}
+            </Alert>
+          ) : null}
+          <FormField label={t("containers.snapshotName")}>
+            <Input value={snapshotName} onChange={({ detail }) => setSnapshotName(detail.value)} />
+          </FormField>
+          <FormField label={t("containers.snapshotDescription")}>
+            <Textarea value={snapshotDescription} onChange={({ detail }) => setSnapshotDescription(detail.value)} rows={4} />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={deleteSnapshotModalVisible}
+        onDismiss={() => {
+          setDeleteSnapshotModalVisible(false);
+          setSelectedSnapshot(null);
+          setSnapshotError(null);
+        }}
+        header={t("containers.deleteSnapshot")}
+        closeAriaLabel={t("containers.deleteSnapshot")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setDeleteSnapshotModalVisible(false);
+                  setSelectedSnapshot(null);
+                  setSnapshotError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={snapshotLoading} onClick={() => void deleteSnapshot()}>
+                {t("common.confirm")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {snapshotError ? (
+            <Alert type="error" header={t("containers.failedToDeleteSnapshot")}>
+              {snapshotError}
+            </Alert>
+          ) : null}
+          <Box>{t("containers.confirmDeleteSnapshot").replace("{name}", selectedSnapshot?.name ?? "")}</Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={rollbackSnapshotModalVisible}
+        onDismiss={() => {
+          setRollbackSnapshotModalVisible(false);
+          setSelectedSnapshot(null);
+          setSnapshotError(null);
+        }}
+        header={t("containers.rollbackSnapshot")}
+        closeAriaLabel={t("containers.rollbackSnapshot")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setRollbackSnapshotModalVisible(false);
+                  setSelectedSnapshot(null);
+                  setSnapshotError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={snapshotLoading} onClick={() => void rollbackSnapshot()}>
+                {t("common.confirm")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {snapshotError ? (
+            <Alert type="error" header={t("containers.failedToRollbackSnapshot")}>
+              {snapshotError}
+            </Alert>
+          ) : null}
+          <Alert type="warning" header={t("containers.rollbackSnapshot")}>
+            {t("containers.confirmRollbackSnapshot").replace("{name}", selectedSnapshot?.name ?? "")}
+          </Alert>
+        </SpaceBetween>
+      </Modal>
       <Modal
         visible={editModalVisible}
         onDismiss={() => {

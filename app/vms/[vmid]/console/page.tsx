@@ -88,9 +88,6 @@ export default function VmConsolePage() {
         setVmName(resource.name ?? null);
         if (cancelled) return;
 
-        const relayHost = window.location.hostname;
-        const wsUrl = `ws://${relayHost}:${config.wsRelayPort}/?node=${resource.node}&vmid=${vmid}&type=qemu`;
-
         const consoleRes = await fetch("/api/console", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -100,6 +97,18 @@ export default function VmConsolePage() {
         if (consoleData.error) throw new Error(consoleData.error);
 
         if (cancelled) return;
+
+        const relayHost = window.location.hostname;
+        const wsParams = new URLSearchParams({
+          node: resource.node,
+          vmid: String(vmid),
+          type: "qemu",
+          authTicket: consoleData.authTicket,
+          vncTicket: consoleData.vncTicket,
+          port: String(consoleData.port),
+        });
+        const wsUrl = `ws://${relayHost}:${config.wsRelayPort}/?${wsParams.toString()}`;
+
         setSession({ wsUrl, vncPassword: consoleData.vncTicket });
       } catch (err) {
         if (cancelled) return;
