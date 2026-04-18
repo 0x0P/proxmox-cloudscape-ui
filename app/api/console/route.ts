@@ -69,5 +69,6 @@ export async function POST(request: NextRequest) {
   return Response.json({
     vncTicket: vncJson.data.ticket,
     port: vncJson.data.port,
+    authTicket: ticket,
   });
 }
