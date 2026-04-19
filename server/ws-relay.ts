@@ -18,18 +18,31 @@ wss.on("connection", (clientWs, req) => {
   const vncTicket = url.searchParams.get("vncTicket");
   const port = url.searchParams.get("port");
 
-  if (!node || !vmid || !authTicket || !vncTicket || !port) {
-    clientWs.close(4400, "Missing required params: node, vmid, authTicket, vncTicket, port");
+  if (!node || !authTicket || !vncTicket || !port) {
+    clientWs.close(4400, "Missing required params: node, authTicket, vncTicket, port");
+    return;
+  }
+
+  if (vmtype !== "shell" && !vmid) {
+    clientWs.close(4400, "Missing required param: vmid");
     return;
   }
 
   try {
-    const endpoint = vmtype === "lxc" ? "lxc" : "qemu";
     const hostUrl = new URL(PROXMOX_HOST);
     const wsProto = hostUrl.protocol === "http:" ? "ws:" : "wss:";
-    const proxmoxWsUrl =
-      `${wsProto}//${hostUrl.host}/api2/json/nodes/${node}/${endpoint}/${vmid}/vncwebsocket` +
-      `?port=${port}&vncticket=${encodeURIComponent(vncTicket)}`;
+    let proxmoxWsUrl: string;
+
+    if (vmtype === "shell") {
+      proxmoxWsUrl =
+        `${wsProto}//${hostUrl.host}/api2/json/nodes/${node}/vncwebsocket` +
+        `?port=${port}&vncticket=${encodeURIComponent(vncTicket)}`;
+    } else {
+      const endpoint = vmtype === "lxc" ? "lxc" : "qemu";
+      proxmoxWsUrl =
+        `${wsProto}//${hostUrl.host}/api2/json/nodes/${node}/${endpoint}/${vmid}/vncwebsocket` +
+        `?port=${port}&vncticket=${encodeURIComponent(vncTicket)}`;
+    }
 
     const proxmoxWs = new WebSocket(proxmoxWsUrl, {
       headers: { Cookie: `PVEAuthCookie=${authTicket}` },
