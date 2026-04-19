@@ -21,6 +21,7 @@ import Spinner from "@cloudscape-design/components/spinner";
 import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import Table, { type TableProps } from "@cloudscape-design/components/table";
 import Tabs, { type TabsProps } from "@cloudscape-design/components/tabs";
+import Textarea from "@cloudscape-design/components/textarea";
 import TextFilter from "@cloudscape-design/components/text-filter";
 import { useTranslation } from "@/app/lib/use-translation";
 
@@ -105,6 +106,131 @@ interface PveNodeService {
   "unit-state"?: string;
 }
 
+interface PveNodeHostsData {
+  data: string;
+  digest: string;
+}
+
+interface PveNodePackage {
+  Package: string;
+  Title?: string;
+  OldVersion?: string;
+  Version?: string;
+  Section?: string;
+  Priority?: string;
+  Arch?: string;
+  Origin?: string;
+}
+
+interface PveNodeCertificate {
+  filename: string;
+  subject?: string;
+  issuer?: string;
+  notbefore?: number;
+  notafter?: number;
+  fingerprint?: string;
+  san?: string;
+  "public-key-type"?: string;
+  "public-key-bits"?: number;
+}
+
+interface PveNodeDisk {
+  devpath: string;
+  size?: number;
+  type?: string;
+  vendor?: string;
+  model?: string;
+  serial?: string;
+  wearout?: number | string;
+  health?: string;
+  gpt?: number | string | boolean;
+  used?: string;
+}
+
+interface PveNodeDiskSmartAttribute {
+  id?: number;
+  name?: string;
+  value?: number | string;
+  worst?: number | string;
+  thresh?: number | string;
+  raw?: number | string;
+}
+
+interface PveNodeDiskSmartData {
+  health?: string;
+  type?: string;
+  attributes?: PveNodeDiskSmartAttribute[];
+}
+
+interface PveNodeSubscription {
+  status?: string;
+  message?: string;
+  serverid?: string;
+  sockets?: number;
+  level?: string;
+  key?: string;
+  next?: string;
+  productname?: string;
+  url?: string;
+  regdate?: string;
+}
+
+interface PveNodeFirewallRule {
+  pos?: number;
+  type?: string;
+  action?: string;
+  macro?: string;
+  proto?: string;
+  source?: string;
+  dest?: string;
+  dport?: string;
+  sport?: string;
+  comment?: string;
+  enable?: number;
+}
+
+interface PveNodeFirewallOptions {
+  enable?: number;
+  log_level_in?: string;
+  log_level_out?: string;
+  ndp?: number;
+  log_smurfs?: number;
+  tcp_flags_log_level?: string;
+}
+
+interface PveNodeFirewallLogEntry {
+  n?: number;
+  t?: string;
+}
+
+interface PveNodePciDevice {
+  id?: string;
+  class?: string;
+  vendor?: string;
+  device?: string;
+  vendor_name?: string;
+  device_name?: string;
+  subsystem_device?: string;
+  subsystem_vendor?: string;
+  iommugroup?: number;
+  mdev?: boolean;
+}
+
+interface PveNodeUsbDevice {
+  busnum?: number;
+  devnum?: number;
+  vendid?: string;
+  prodid?: string;
+  manufacturer?: string;
+  product?: string;
+  speed?: string;
+  serial?: string;
+  class?: number;
+  level?: number;
+  port?: number;
+  usbpath?: string;
+}
+
 interface NodeDetailData {
   status: PveNodeStatus;
   network: PveNetwork[];
@@ -164,6 +290,34 @@ function getServiceStateType(state?: string) {
   return "warning" as const;
 }
 
+function getHealthStateType(health?: string) {
+  const normalizedHealth = health?.toLowerCase();
+  if (!normalizedHealth) {
+    return "info" as const;
+  }
+  if (["passed", "ok", "healthy", "good"].includes(normalizedHealth)) {
+    return "success" as const;
+  }
+  if (["failed", "critical", "bad"].includes(normalizedHealth)) {
+    return "error" as const;
+  }
+  return "warning" as const;
+}
+
+function isTruthyDiskFlag(value?: number | string | boolean) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalizedValue = value.trim().toLowerCase();
+    return normalizedValue !== "" && normalizedValue !== "0" && normalizedValue !== "false" && normalizedValue !== "no";
+  }
+  return false;
+}
+
 async function fetchProxmox<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     cache: "no-store",
@@ -206,11 +360,96 @@ export default function NodeDetailPage() {
   const [timezoneValue, setTimezoneValue] = useState("");
   const [syslogEntries, setSyslogEntries] = useState<PveNodeSyslogEntry[]>([]);
   const [syslogLoading, setSyslogLoading] = useState(false);
+  const [syslogLoaded, setSyslogLoaded] = useState(false);
   const [syslogError, setSyslogError] = useState<string | null>(null);
   const [services, setServices] = useState<PveNodeService[]>([]);
   const [servicesLoading, setServicesLoading] = useState(false);
+  const [servicesLoaded, setServicesLoaded] = useState(false);
   const [servicesError, setServicesError] = useState<string | null>(null);
   const [serviceActionLoading, setServiceActionLoading] = useState<Record<string, "start" | "stop" | "restart" | null>>({});
+  const [hostsData, setHostsData] = useState<PveNodeHostsData | null>(null);
+  const [hostsLoading, setHostsLoading] = useState(false);
+  const [hostsError, setHostsError] = useState<string | null>(null);
+  const [hostsModalVisible, setHostsModalVisible] = useState(false);
+  const [hostsSaving, setHostsSaving] = useState(false);
+  const [hostsFormContent, setHostsFormContent] = useState("");
+  const [packages, setPackages] = useState<PveNodePackage[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+  const [packagesLoaded, setPackagesLoaded] = useState(false);
+  const [packagesError, setPackagesError] = useState<string | null>(null);
+  const [updatingPackages, setUpdatingPackages] = useState(false);
+  const [certificates, setCertificates] = useState<PveNodeCertificate[]>([]);
+  const [certsLoading, setCertsLoading] = useState(false);
+  const [certsLoaded, setCertsLoaded] = useState(false);
+  const [certsError, setCertsError] = useState<string | null>(null);
+  const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [uploadSaving, setUploadSaving] = useState(false);
+  const [certKey, setCertKey] = useState("");
+  const [certChain, setCertChain] = useState("");
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [disks, setDisks] = useState<PveNodeDisk[]>([]);
+  const [disksLoading, setDisksLoading] = useState(false);
+  const [disksLoaded, setDisksLoaded] = useState(false);
+  const [disksError, setDisksError] = useState<string | null>(null);
+  const [smartModalVisible, setSmartModalVisible] = useState(false);
+  const [smartData, setSmartData] = useState<PveNodeDiskSmartData | null>(null);
+  const [smartLoading, setSmartLoading] = useState(false);
+  const [smartError, setSmartError] = useState<string | null>(null);
+  const [selectedDisk, setSelectedDisk] = useState<PveNodeDisk | null>(null);
+  const [initGptModalVisible, setInitGptModalVisible] = useState(false);
+  const [wipeDiskModalVisible, setWipeDiskModalVisible] = useState(false);
+  const [diskActionLoading, setDiskActionLoading] = useState(false);
+  const [subscriptionData, setSubscriptionData] = useState<PveNodeSubscription | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+  const [subscriptionKey, setSubscriptionKey] = useState("");
+  const [activatingSubscription, setActivatingSubscription] = useState(false);
+  const [removeSubscriptionModalVisible, setRemoveSubscriptionModalVisible] = useState(false);
+  const [removingSubscription, setRemovingSubscription] = useState(false);
+  const [firewallRules, setFirewallRules] = useState<PveNodeFirewallRule[]>([]);
+  const [firewallOptions, setFirewallOptions] = useState<PveNodeFirewallOptions | null>(null);
+  const [firewallLog, setFirewallLog] = useState<PveNodeFirewallLogEntry[]>([]);
+  const [fwRulesLoading, setFwRulesLoading] = useState(false);
+  const [fwRulesLoaded, setFwRulesLoaded] = useState(false);
+  const [fwLogLoading, setFwLogLoading] = useState(false);
+  const [fwLogLoaded, setFwLogLoaded] = useState(false);
+  const [fwError, setFwError] = useState<string | null>(null);
+  const [fwRuleModalVisible, setFwRuleModalVisible] = useState(false);
+  const [fwRuleEditPos, setFwRuleEditPos] = useState<number | null>(null);
+  const [fwRuleForm, setFwRuleForm] = useState({
+    type: "",
+    action: "",
+    macro: "",
+    proto: "",
+    source: "",
+    dest: "",
+    dport: "",
+    sport: "",
+    comment: "",
+    enable: 1,
+  });
+  const [fwRuleSaving, setFwRuleSaving] = useState(false);
+  const [fwOptionsModalVisible, setFwOptionsModalVisible] = useState(false);
+  const [fwOptionsSaving, setFwOptionsSaving] = useState(false);
+  const [fwDeleteModalVisible, setFwDeleteModalVisible] = useState(false);
+  const [fwDeletePos, setFwDeletePos] = useState<number | null>(null);
+  const [fwDeleting, setFwDeleting] = useState(false);
+  const [fwOptionsForm, setFwOptionsForm] = useState({
+    enable: "0",
+    log_level_in: "",
+    log_level_out: "",
+    ndp: "0",
+    log_smurfs: "0",
+    tcp_flags_log_level: "",
+  });
+  const [pciDevices, setPciDevices] = useState<PveNodePciDevice[]>([]);
+  const [usbDevices, setUsbDevices] = useState<PveNodeUsbDevice[]>([]);
+  const [pciLoading, setPciLoading] = useState(false);
+  const [pciLoaded, setPciLoaded] = useState(false);
+  const [usbLoading, setUsbLoading] = useState(false);
+  const [usbLoaded, setUsbLoaded] = useState(false);
+  const [hwError, setHwError] = useState<string | null>(null);
 
   const loadNode = useCallback(async () => {
     if (!node) {
@@ -289,6 +528,7 @@ export default function NodeDetailPage() {
       setSyslogLoading(true);
       const entries = await fetchProxmox<PveNodeSyslogEntry[]>(`/api/proxmox/nodes/${node}/syslog?start=0&limit=500`);
       setSyslogEntries(entries ?? []);
+      setSyslogLoaded(true);
       setSyslogError(null);
     } catch (fetchError) {
       setSyslogError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadSyslog"));
@@ -306,11 +546,186 @@ export default function NodeDetailPage() {
       setServicesLoading(true);
       const serviceItems = await fetchProxmox<PveNodeService[]>(`/api/proxmox/nodes/${node}/services`);
       setServices(serviceItems ?? []);
+      setServicesLoaded(true);
       setServicesError(null);
     } catch (fetchError) {
       setServicesError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadServices"));
     } finally {
       setServicesLoading(false);
+    }
+  }, [node, t]);
+
+  const loadHosts = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setHostsLoading(true);
+      const hosts = await fetchProxmox<PveNodeHostsData>(`/api/proxmox/nodes/${node}/hosts`);
+      setHostsData(hosts ?? null);
+      setHostsError(null);
+    } catch (fetchError) {
+      setHostsError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadHosts"));
+    } finally {
+      setHostsLoading(false);
+    }
+  }, [node, t]);
+
+  const loadPackages = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setPackagesLoading(true);
+      const packageItems = await fetchProxmox<PveNodePackage[]>(`/api/proxmox/nodes/${node}/apt/versions`);
+      setPackages(packageItems ?? []);
+      setPackagesLoaded(true);
+      setPackagesError(null);
+    } catch (fetchError) {
+      setPackagesError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadPackages"));
+    } finally {
+      setPackagesLoading(false);
+    }
+  }, [node, t]);
+
+  const loadCertificates = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setCertsLoading(true);
+      const certificateItems = await fetchProxmox<PveNodeCertificate[]>(`/api/proxmox/nodes/${node}/certificates/info`);
+      setCertificates(certificateItems ?? []);
+      setCertsLoaded(true);
+      setCertsError(null);
+    } catch (fetchError) {
+      setCertsError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadCertificates"));
+    } finally {
+      setCertsLoading(false);
+    }
+  }, [node, t]);
+
+  const loadDisks = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setDisksLoading(true);
+      const diskItems = await fetchProxmox<PveNodeDisk[]>(`/api/proxmox/nodes/${node}/disks/list`);
+      setDisks(diskItems ?? []);
+      setDisksLoaded(true);
+      setDisksError(null);
+    } catch (fetchError) {
+      setDisksError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadDisks"));
+    } finally {
+      setDisksLoading(false);
+    }
+  }, [node, t]);
+
+  const loadSubscription = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setSubscriptionLoading(true);
+      const subscription = await fetchProxmox<PveNodeSubscription>(`/api/proxmox/nodes/${node}/subscription`);
+      setSubscriptionData(subscription ?? null);
+      setSubscriptionError(null);
+    } catch (fetchError) {
+      setSubscriptionError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadSubscription"));
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  }, [node, t]);
+
+  const loadFirewallRules = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setFwRulesLoading(true);
+      const rules = await fetchProxmox<PveNodeFirewallRule[]>(`/api/proxmox/nodes/${node}/firewall/rules`);
+      setFirewallRules(rules ?? []);
+      setFwRulesLoaded(true);
+      setFwError(null);
+    } catch (fetchError) {
+      setFwError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadFirewallRules"));
+    } finally {
+      setFwRulesLoading(false);
+    }
+  }, [node, t]);
+
+  const loadFirewallOptions = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      const options = await fetchProxmox<PveNodeFirewallOptions>(`/api/proxmox/nodes/${node}/firewall/options`);
+      setFirewallOptions(options ?? null);
+      setFwError(null);
+    } catch (fetchError) {
+      setFwError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadFirewallOptions"));
+    }
+  }, [node, t]);
+
+  const loadFirewallLog = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setFwLogLoading(true);
+      const logEntries = await fetchProxmox<PveNodeFirewallLogEntry[]>(`/api/proxmox/nodes/${node}/firewall/log?limit=50`);
+      setFirewallLog(logEntries ?? []);
+      setFwLogLoaded(true);
+      setFwError(null);
+    } catch (fetchError) {
+      setFwError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadFirewallLog"));
+    } finally {
+      setFwLogLoading(false);
+    }
+  }, [node, t]);
+
+  const loadPciDevices = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setPciLoading(true);
+      const devices = await fetchProxmox<PveNodePciDevice[]>(`/api/proxmox/nodes/${node}/hardware/pci`);
+      setPciDevices(devices ?? []);
+      setPciLoaded(true);
+      setHwError(null);
+    } catch (fetchError) {
+      setHwError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadPci"));
+    } finally {
+      setPciLoading(false);
+    }
+  }, [node, t]);
+
+  const loadUsbDevices = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setUsbLoading(true);
+      const devices = await fetchProxmox<PveNodeUsbDevice[]>(`/api/proxmox/nodes/${node}/hardware/usb`);
+      setUsbDevices(devices ?? []);
+      setUsbLoaded(true);
+      setHwError(null);
+    } catch (fetchError) {
+      setHwError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadUsb"));
+    } finally {
+      setUsbLoading(false);
     }
   }, [node, t]);
 
@@ -321,30 +736,100 @@ export default function NodeDetailPage() {
     if (activeTabId === "time" && !timeConfig && !timeLoading && !timeError) {
       void loadTime();
     }
-    if (activeTabId === "syslog" && syslogEntries.length === 0 && !syslogLoading && !syslogError) {
+    if (activeTabId === "syslog" && !syslogLoaded && !syslogLoading && !syslogError) {
       void loadSyslog();
     }
-    if (activeTabId === "services" && services.length === 0 && !servicesLoading && !servicesError) {
+    if (activeTabId === "services" && !servicesLoaded && !servicesLoading && !servicesError) {
       void loadServices();
+    }
+    if (activeTabId === "hosts" && !hostsData && !hostsLoading && !hostsError) {
+      void loadHosts();
+    }
+    if (activeTabId === "packages" && !packagesLoaded && !packagesLoading && !packagesError) {
+      void loadPackages();
+    }
+    if (activeTabId === "certificates" && !certsLoaded && !certsLoading && !certsError) {
+      void loadCertificates();
+    }
+    if (activeTabId === "disks" && !disksLoaded && !disksLoading && !disksError) {
+      void loadDisks();
+    }
+    if (activeTabId === "subscription" && !subscriptionData && !subscriptionLoading && !subscriptionError) {
+      void loadSubscription();
+    }
+    if (activeTabId === "firewall") {
+      if (!fwRulesLoaded && !fwRulesLoading && !fwError) {
+        void loadFirewallRules();
+      }
+      if (!firewallOptions && !fwError) {
+        void loadFirewallOptions();
+      }
+      if (!fwLogLoaded && !fwLogLoading && !fwError) {
+        void loadFirewallLog();
+      }
+    }
+    if (activeTabId === "hardware") {
+      if (!pciLoaded && !pciLoading && !hwError) {
+        void loadPciDevices();
+      }
+      if (!usbLoaded && !usbLoading && !hwError) {
+        void loadUsbDevices();
+      }
     }
   }, [
     activeTabId,
+    certsLoaded,
+    certsError,
+    certsLoading,
     dnsConfig,
     dnsError,
     dnsLoading,
+    disksLoaded,
+    disksError,
+    disksLoading,
+    firewallOptions,
+    fwError,
+    fwLogLoaded,
+    fwLogLoading,
+    fwRulesLoaded,
+    fwRulesLoading,
+    hostsData,
+    hostsError,
+    hostsLoading,
     loadDns,
+    loadCertificates,
+    loadDisks,
+    loadFirewallLog,
+    loadFirewallOptions,
+    loadFirewallRules,
+    loadHosts,
+    loadPackages,
+    loadPciDevices,
     loadServices,
+    loadSubscription,
     loadSyslog,
     loadTime,
-    services.length,
+    loadUsbDevices,
+    packagesLoaded,
+    packagesError,
+    packagesLoading,
+    pciLoaded,
+    pciLoading,
+    servicesLoaded,
     servicesError,
     servicesLoading,
-    syslogEntries.length,
+    subscriptionData,
+    subscriptionError,
+    subscriptionLoading,
+    syslogLoaded,
     syslogError,
     syslogLoading,
     timeConfig,
     timeError,
     timeLoading,
+    usbLoaded,
+    usbLoading,
+    hwError,
   ]);
 
   const openDnsModal = useCallback(() => {
@@ -363,6 +848,50 @@ export default function NodeDetailPage() {
     setTimeError(null);
     setTimeModalVisible(true);
   }, [timeConfig]);
+
+  const openHostsModal = useCallback(() => {
+    setHostsFormContent(hostsData?.data ?? "");
+    setHostsError(null);
+    setHostsModalVisible(true);
+  }, [hostsData]);
+
+  const openUploadCertificateModal = useCallback(() => {
+    setCertKey("");
+    setCertChain("");
+    setCertsError(null);
+    setUploadModalVisible(true);
+  }, []);
+
+  const openFirewallRuleModal = useCallback((rule?: PveNodeFirewallRule) => {
+    setFwRuleEditPos(rule?.pos ?? null);
+    setFwRuleForm({
+      type: rule?.type ?? "",
+      action: rule?.action ?? "",
+      macro: rule?.macro ?? "",
+      proto: rule?.proto ?? "",
+      source: rule?.source ?? "",
+      dest: rule?.dest ?? "",
+      dport: rule?.dport ?? "",
+      sport: rule?.sport ?? "",
+      comment: rule?.comment ?? "",
+      enable: rule?.enable ?? 1,
+    });
+    setFwError(null);
+    setFwRuleModalVisible(true);
+  }, []);
+
+  const openFirewallOptionsModal = useCallback(() => {
+    setFwOptionsForm({
+      enable: String(firewallOptions?.enable ?? 0),
+      log_level_in: firewallOptions?.log_level_in ?? "",
+      log_level_out: firewallOptions?.log_level_out ?? "",
+      ndp: String(firewallOptions?.ndp ?? 0),
+      log_smurfs: String(firewallOptions?.log_smurfs ?? 0),
+      tcp_flags_log_level: firewallOptions?.tcp_flags_log_level ?? "",
+    });
+    setFwError(null);
+    setFwOptionsModalVisible(true);
+  }, [firewallOptions]);
 
   const pushFlash = useCallback((item: FlashbarProps.MessageDefinition) => {
     setFlashbarItems((current) => [...current.filter((entry) => entry.id !== item.id), item]);
@@ -540,6 +1069,426 @@ export default function NodeDetailPage() {
       setServiceActionLoading((current) => ({ ...current, [service]: null }));
     }
   }, [loadServices, node, pushFlash, t]);
+
+  const saveHosts = useCallback(async () => {
+    if (!node || !hostsData) {
+      return;
+    }
+
+    try {
+      setHostsSaving(true);
+      setHostsError(null);
+
+      const body = new URLSearchParams({
+        data: hostsFormContent,
+        digest: hostsData.digest,
+      });
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/hosts`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.hostsUpdated"),
+        dismissible: true,
+        id: "node-hosts-updated",
+      });
+
+      setHostsModalVisible(false);
+      await loadHosts();
+    } catch (saveError) {
+      setHostsError(saveError instanceof Error ? saveError.message : t("nodeDetail.failedToUpdateHosts"));
+    } finally {
+      setHostsSaving(false);
+    }
+  }, [hostsData, hostsFormContent, loadHosts, node, pushFlash, t]);
+
+  const refreshPackageLists = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setUpdatingPackages(true);
+      setPackagesError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/apt/update`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.packageListUpdated"),
+        dismissible: true,
+        id: "node-package-lists-updated",
+      });
+
+      await loadPackages();
+    } catch (updateError) {
+      setPackagesError(updateError instanceof Error ? updateError.message : t("nodeDetail.failedToUpdatePackageLists"));
+    } finally {
+      setUpdatingPackages(false);
+    }
+  }, [loadPackages, node, pushFlash, t]);
+
+  const uploadCertificate = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    const trimmedKey = certKey.trim();
+    const trimmedChain = certChain.trim();
+
+    if (!trimmedKey) {
+      setCertsError(t("nodeDetail.certificateKeyRequired"));
+      return;
+    }
+
+    if (!trimmedChain) {
+      setCertsError(t("nodeDetail.certificateChainRequired"));
+      return;
+    }
+
+    try {
+      setUploadSaving(true);
+      setCertsError(null);
+
+      const body = new URLSearchParams({
+        key: trimmedKey,
+        certificates: trimmedChain,
+        restart: "1",
+        force: "1",
+      });
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/certificates/custom`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.certificateUploaded"),
+        dismissible: true,
+        id: "node-certificate-uploaded",
+      });
+
+      setUploadModalVisible(false);
+      setCertKey("");
+      setCertChain("");
+      await loadCertificates();
+    } catch (uploadError) {
+      setCertsError(uploadError instanceof Error ? uploadError.message : t("nodeDetail.failedToUploadCertificate"));
+    } finally {
+      setUploadSaving(false);
+    }
+  }, [certChain, certKey, loadCertificates, node, pushFlash, t]);
+
+  const deleteCertificate = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setDeleteLoading(true);
+      setCertsError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/certificates/custom`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.certificateDeleted"),
+        dismissible: true,
+        id: "node-certificate-deleted",
+      });
+
+      setDeleteModalVisible(false);
+      await loadCertificates();
+    } catch (deleteError) {
+      setCertsError(deleteError instanceof Error ? deleteError.message : t("nodeDetail.failedToDeleteCertificate"));
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [loadCertificates, node, pushFlash, t]);
+
+  const activateSubscription = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    const key = subscriptionKey.trim();
+    if (!key) {
+      setSubscriptionError(t("nodeDetail.subscriptionKeyPlaceholder"));
+      return;
+    }
+
+    try {
+      setActivatingSubscription(true);
+      setSubscriptionError(null);
+
+      const body = new URLSearchParams({ key });
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/subscription`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.subscriptionActivated"),
+        dismissible: true,
+        id: "node-subscription-activated",
+      });
+
+      setSubscriptionKey("");
+      await loadSubscription();
+    } catch (activationError) {
+      setSubscriptionError(activationError instanceof Error ? activationError.message : t("nodeDetail.failedToActivateSubscription"));
+    } finally {
+      setActivatingSubscription(false);
+    }
+  }, [loadSubscription, node, pushFlash, subscriptionKey, t]);
+
+  const removeSubscription = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setRemovingSubscription(true);
+      setSubscriptionError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/subscription`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.subscriptionRemoved"),
+        dismissible: true,
+        id: "node-subscription-removed",
+      });
+
+      setRemoveSubscriptionModalVisible(false);
+      await loadSubscription();
+    } catch (removeError) {
+      setSubscriptionError(removeError instanceof Error ? removeError.message : t("nodeDetail.failedToRemoveSubscription"));
+    } finally {
+      setRemovingSubscription(false);
+    }
+  }, [loadSubscription, node, pushFlash, t]);
+
+  const saveFirewallRule = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setFwRuleSaving(true);
+      setFwError(null);
+
+      const body = new URLSearchParams({
+        type: fwRuleForm.type.trim(),
+        action: fwRuleForm.action.trim(),
+        macro: fwRuleForm.macro.trim(),
+        proto: fwRuleForm.proto.trim(),
+        source: fwRuleForm.source.trim(),
+        dest: fwRuleForm.dest.trim(),
+        dport: fwRuleForm.dport.trim(),
+        sport: fwRuleForm.sport.trim(),
+        comment: fwRuleForm.comment.trim(),
+        enable: String(fwRuleForm.enable),
+      });
+
+      await fetchProxmox(
+        fwRuleEditPos == null
+          ? `/api/proxmox/nodes/${node}/firewall/rules`
+          : `/api/proxmox/nodes/${node}/firewall/rules/${fwRuleEditPos}`,
+        {
+          method: fwRuleEditPos == null ? "POST" : "PUT",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: body.toString(),
+        },
+      );
+
+      pushFlash({
+        type: "success",
+        content: t(fwRuleEditPos == null ? "nodeDetail.firewallRuleCreated" : "nodeDetail.firewallRuleUpdated"),
+        dismissible: true,
+        id: fwRuleEditPos == null ? "firewall-rule-created" : `firewall-rule-updated-${fwRuleEditPos}`,
+      });
+
+      setFwRuleModalVisible(false);
+      await loadFirewallRules();
+    } catch (saveError) {
+      setFwError(saveError instanceof Error ? saveError.message : t(fwRuleEditPos == null ? "nodeDetail.failedToCreateFirewallRule" : "nodeDetail.failedToUpdateFirewallRule"));
+    } finally {
+      setFwRuleSaving(false);
+    }
+  }, [fwRuleEditPos, fwRuleForm, loadFirewallRules, node, pushFlash, t]);
+
+  const saveFirewallOptions = useCallback(async () => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setFwOptionsSaving(true);
+      setFwError(null);
+
+      const body = new URLSearchParams({
+        enable: fwOptionsForm.enable.trim(),
+        log_level_in: fwOptionsForm.log_level_in.trim(),
+        log_level_out: fwOptionsForm.log_level_out.trim(),
+        ndp: fwOptionsForm.ndp.trim(),
+        log_smurfs: fwOptionsForm.log_smurfs.trim(),
+        tcp_flags_log_level: fwOptionsForm.tcp_flags_log_level.trim(),
+      });
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/firewall/options`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.firewallOptionsUpdated"),
+        dismissible: true,
+        id: "firewall-options-updated",
+      });
+
+      setFwOptionsModalVisible(false);
+      await loadFirewallOptions();
+    } catch (saveError) {
+      setFwError(saveError instanceof Error ? saveError.message : t("nodeDetail.failedToUpdateFirewallOptions"));
+    } finally {
+      setFwOptionsSaving(false);
+    }
+  }, [fwOptionsForm, loadFirewallOptions, node, pushFlash, t]);
+
+  const deleteFirewallRule = useCallback(async () => {
+    if (!node || fwDeletePos == null) {
+      return;
+    }
+
+    try {
+      setFwDeleting(true);
+      setFwError(null);
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/firewall/rules/${fwDeletePos}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams().toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodeDetail.firewallRuleDeleted"),
+        dismissible: true,
+        id: `firewall-rule-deleted-${fwDeletePos}`,
+      });
+
+      setFwDeleteModalVisible(false);
+      setFwDeletePos(null);
+      await loadFirewallRules();
+    } catch (deleteError) {
+      setFwError(deleteError instanceof Error ? deleteError.message : t("nodeDetail.failedToDeleteFirewallRule"));
+    } finally {
+      setFwDeleting(false);
+    }
+  }, [fwDeletePos, loadFirewallRules, node, pushFlash, t]);
+
+  const openSmartModal = useCallback(async (disk: PveNodeDisk) => {
+    if (!node) {
+      return;
+    }
+
+    try {
+      setSelectedDisk(disk);
+      setSmartModalVisible(true);
+      setSmartLoading(true);
+      setSmartData(null);
+      setSmartError(null);
+
+      const smart = await fetchProxmox<PveNodeDiskSmartData>(`/api/proxmox/nodes/${node}/disks/smart?disk=${encodeURIComponent(disk.devpath)}`);
+      setSmartData(smart ?? null);
+    } catch (fetchError) {
+      setSmartError(fetchError instanceof Error ? fetchError.message : t("nodeDetail.failedToLoadSmart"));
+    } finally {
+      setSmartLoading(false);
+    }
+  }, [node, t]);
+
+  const runDiskAction = useCallback(async (action: "initgpt" | "wipedisk") => {
+    if (!node || !selectedDisk) {
+      return;
+    }
+
+    try {
+      setDiskActionLoading(true);
+      setDisksError(null);
+
+      const body = new URLSearchParams({ disk: selectedDisk.devpath });
+
+      await fetchProxmox(`/api/proxmox/nodes/${node}/disks/${action}`, {
+        method: action === "initgpt" ? "POST" : "PUT",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t(action === "initgpt" ? "nodeDetail.initGptSuccess" : "nodeDetail.wipeDiskSuccess"),
+        dismissible: true,
+        id: `disk-${action}-${selectedDisk.devpath}`,
+      });
+
+      setInitGptModalVisible(false);
+      setWipeDiskModalVisible(false);
+      await loadDisks();
+    } catch (actionError) {
+      setDisksError(
+        actionError instanceof Error
+          ? actionError.message
+          : t(action === "initgpt" ? "nodeDetail.failedToInitGpt" : "nodeDetail.failedToWipeDisk"),
+      );
+    } finally {
+      setDiskActionLoading(false);
+    }
+  }, [loadDisks, node, pushFlash, selectedDisk, t]);
 
   const networkColumns = useMemo<TableProps<PveNetwork>["columnDefinitions"]>(
     () => [
@@ -722,6 +1671,376 @@ export default function NodeDetailPage() {
       },
     ],
     [runServiceAction, serviceActionLoading, t],
+  );
+
+  const packagesColumns = useMemo<TableProps<PveNodePackage>["columnDefinitions"]>(
+    () => [
+      {
+        id: "Package",
+        header: t("nodeDetail.packageName"),
+        cell: ({ Package: packageName }) => packageName,
+        isRowHeader: true,
+      },
+      {
+        id: "OldVersion",
+        header: t("nodeDetail.currentVersion"),
+        cell: ({ OldVersion }) => OldVersion ?? "-",
+      },
+      {
+        id: "Version",
+        header: t("nodeDetail.availableVersion"),
+        cell: ({ Version }) => Version ?? "-",
+      },
+      {
+        id: "Section",
+        header: t("nodeDetail.packageSection"),
+        cell: ({ Section }) => Section ?? "-",
+      },
+      {
+        id: "Arch",
+        header: t("nodeDetail.packageArch"),
+        cell: ({ Arch }) => Arch ?? "-",
+      },
+      {
+        id: "Origin",
+        header: t("nodeDetail.packageOrigin"),
+        cell: ({ Origin }) => Origin ?? "-",
+      },
+    ],
+    [t],
+  );
+
+  const certificatesColumns = useMemo<TableProps<PveNodeCertificate>["columnDefinitions"]>(
+    () => [
+      {
+        id: "filename",
+        header: t("nodeDetail.certificateFileName"),
+        cell: ({ filename }) => filename,
+        isRowHeader: true,
+      },
+      {
+        id: "subject",
+        header: t("nodeDetail.certificateSubject"),
+        cell: ({ subject }) => subject ?? "-",
+      },
+      {
+        id: "issuer",
+        header: t("nodeDetail.certificateIssuer"),
+        cell: ({ issuer }) => issuer ?? "-",
+      },
+      {
+        id: "notbefore",
+        header: t("nodeDetail.certificateNotBefore"),
+        cell: ({ notbefore }) => formatDateTime(notbefore),
+      },
+      {
+        id: "notafter",
+        header: t("nodeDetail.certificateNotAfter"),
+        cell: ({ notafter }) => formatDateTime(notafter),
+      },
+      {
+        id: "fingerprint",
+        header: t("nodeDetail.certificateFingerprint"),
+        cell: ({ fingerprint }) => fingerprint ?? "-",
+      },
+    ],
+    [t],
+  );
+
+  const disksColumns = useMemo<TableProps<PveNodeDisk>["columnDefinitions"]>(
+    () => [
+      {
+        id: "devpath",
+        header: t("nodeDetail.diskDevice"),
+        cell: ({ devpath }) => devpath,
+        isRowHeader: true,
+      },
+      {
+        id: "size",
+        header: t("nodeDetail.diskSize"),
+        cell: ({ size }) => formatBytes(size ?? 0),
+      },
+      {
+        id: "type",
+        header: t("nodeDetail.diskType"),
+        cell: ({ type }) => type ?? "-",
+      },
+      {
+        id: "vendor",
+        header: t("nodeDetail.diskVendor"),
+        cell: ({ vendor }) => vendor ?? "-",
+      },
+      {
+        id: "model",
+        header: t("nodeDetail.diskModel"),
+        cell: ({ model }) => model ?? "-",
+      },
+      {
+        id: "serial",
+        header: t("nodeDetail.diskSerial"),
+        cell: ({ serial }) => serial ?? "-",
+      },
+      {
+        id: "wearout",
+        header: t("nodeDetail.diskWearout"),
+        cell: ({ wearout }) => wearout != null ? String(wearout) : "-",
+      },
+      {
+        id: "health",
+        header: t("nodeDetail.diskHealth"),
+        cell: ({ health }) => <StatusIndicator type={getHealthStateType(health)}>{health ?? "-"}</StatusIndicator>,
+      },
+      {
+        id: "gpt",
+        header: t("nodeDetail.diskGpt"),
+        cell: ({ gpt }) => (isTruthyDiskFlag(gpt) ? t("common.yes") : t("common.no")),
+      },
+      {
+        id: "used",
+        header: t("nodeDetail.diskUsedBy"),
+        cell: ({ used }) => used ?? "-",
+      },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        cell: (disk) => (
+          <SpaceBetween size="xs" direction="horizontal">
+            <Button variant="inline-link" onClick={() => void openSmartModal(disk)}>{t("nodeDetail.viewSmart")}</Button>
+            <Button variant="inline-link" onClick={() => {
+              setSelectedDisk(disk);
+              setInitGptModalVisible(true);
+            }}>{t("nodeDetail.initGpt")}</Button>
+            <Button variant="inline-link" onClick={() => {
+              setSelectedDisk(disk);
+              setWipeDiskModalVisible(true);
+            }}>{t("nodeDetail.wipeDisk")}</Button>
+          </SpaceBetween>
+        ),
+      },
+    ],
+    [openSmartModal, t],
+  );
+
+  const smartColumns = useMemo<TableProps<PveNodeDiskSmartAttribute>["columnDefinitions"]>(
+    () => [
+      {
+        id: "id",
+        header: t("nodeDetail.smartId"),
+        cell: ({ id }) => id != null ? String(id) : "-",
+        isRowHeader: true,
+      },
+      {
+        id: "name",
+        header: t("nodeDetail.smartAttribute"),
+        cell: ({ name }) => name ?? "-",
+      },
+      {
+        id: "value",
+        header: t("nodeDetail.smartValue"),
+        cell: ({ value }) => value != null ? String(value) : "-",
+      },
+      {
+        id: "worst",
+        header: t("nodeDetail.smartWorst"),
+        cell: ({ worst }) => worst != null ? String(worst) : "-",
+      },
+      {
+        id: "thresh",
+        header: t("nodeDetail.smartThreshold"),
+        cell: ({ thresh }) => thresh != null ? String(thresh) : "-",
+      },
+      {
+        id: "raw",
+        header: t("nodeDetail.smartRaw"),
+        cell: ({ raw }) => raw != null ? String(raw) : "-",
+      },
+    ],
+    [t],
+  );
+
+  const firewallRulesColumns = useMemo<TableProps<PveNodeFirewallRule>["columnDefinitions"]>(
+    () => [
+      {
+        id: "pos",
+        header: t("nodeDetail.firewallPosition"),
+        cell: ({ pos }) => pos != null ? String(pos) : "-",
+        isRowHeader: true,
+      },
+      {
+        id: "type",
+        header: t("nodeDetail.firewallType"),
+        cell: ({ type }) => type ?? "-",
+      },
+      {
+        id: "action",
+        header: t("nodeDetail.firewallAction"),
+        cell: ({ action }) => action ?? "-",
+      },
+      {
+        id: "macro",
+        header: t("nodeDetail.firewallMacro"),
+        cell: ({ macro }) => macro ?? "-",
+      },
+      {
+        id: "proto",
+        header: t("nodeDetail.firewallProtocol"),
+        cell: ({ proto }) => proto ?? "-",
+      },
+      {
+        id: "source",
+        header: t("nodeDetail.firewallSource"),
+        cell: ({ source }) => source ?? "-",
+      },
+      {
+        id: "dest",
+        header: t("nodeDetail.firewallDest"),
+        cell: ({ dest }) => dest ?? "-",
+      },
+      {
+        id: "dport",
+        header: t("nodeDetail.firewallDport"),
+        cell: ({ dport }) => dport ?? "-",
+      },
+      {
+        id: "sport",
+        header: t("nodeDetail.firewallSport"),
+        cell: ({ sport }) => sport ?? "-",
+      },
+      {
+        id: "comment",
+        header: t("nodeDetail.firewallComment"),
+        cell: ({ comment }) => comment ?? "-",
+      },
+      {
+        id: "enable",
+        header: t("nodeDetail.firewallEnabled"),
+        cell: ({ enable }) => enable ? t("common.yes") : t("common.no"),
+      },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        cell: (rule) => (
+          <SpaceBetween size="xs" direction="horizontal">
+            <Button variant="inline-link" onClick={() => openFirewallRuleModal(rule)}>{t("common.edit")}</Button>
+            <Button variant="inline-link" onClick={() => {
+              setFwDeletePos(rule.pos ?? null);
+              setFwError(null);
+              setFwDeleteModalVisible(true);
+            }}>{t("common.delete")}</Button>
+          </SpaceBetween>
+        ),
+      },
+    ],
+    [openFirewallRuleModal, t],
+  );
+
+  const firewallLogColumns = useMemo<TableProps<PveNodeFirewallLogEntry>["columnDefinitions"]>(
+    () => [
+      {
+        id: "n",
+        header: t("nodeDetail.lineNumber"),
+        cell: ({ n }) => n != null ? String(n) : "-",
+        isRowHeader: true,
+      },
+      {
+        id: "t",
+        header: t("nodeDetail.firewallLogEntry"),
+        cell: ({ t: message }) => message ?? "-",
+      },
+    ],
+    [t],
+  );
+
+  const pciColumns = useMemo<TableProps<PveNodePciDevice>["columnDefinitions"]>(
+    () => [
+      {
+        id: "id",
+        header: t("nodeDetail.pciId"),
+        cell: ({ id }) => id ?? "-",
+        isRowHeader: true,
+      },
+      {
+        id: "class",
+        header: t("nodeDetail.pciClass"),
+        cell: ({ class: pciClass }) => pciClass ?? "-",
+      },
+      {
+        id: "vendor_name",
+        header: t("nodeDetail.pciVendorName"),
+        cell: ({ vendor_name, vendor }) => vendor_name ?? vendor ?? "-",
+      },
+      {
+        id: "device_name",
+        header: t("nodeDetail.pciDeviceName"),
+        cell: ({ device_name, device }) => device_name ?? device ?? "-",
+      },
+      {
+        id: "subsystem",
+        header: t("nodeDetail.pciSubsystemId"),
+        cell: ({ subsystem_vendor, subsystem_device }) => {
+          const subsystem = [subsystem_vendor, subsystem_device].filter(Boolean).join(":");
+          return subsystem || "-";
+        },
+      },
+      {
+        id: "iommugroup",
+        header: t("nodeDetail.pciIommuGroup"),
+        cell: ({ iommugroup }) => iommugroup != null ? String(iommugroup) : "-",
+      },
+      {
+        id: "mdev",
+        header: t("nodeDetail.pciMdev"),
+        cell: ({ mdev }) => mdev ? t("common.yes") : t("common.no"),
+      },
+    ],
+    [t],
+  );
+
+  const usbColumns = useMemo<TableProps<PveNodeUsbDevice>["columnDefinitions"]>(
+    () => [
+      {
+        id: "busnum",
+        header: t("nodeDetail.usbBus"),
+        cell: ({ busnum }) => busnum != null ? String(busnum) : "-",
+        isRowHeader: true,
+      },
+      {
+        id: "devnum",
+        header: t("nodeDetail.usbDev"),
+        cell: ({ devnum }) => devnum != null ? String(devnum) : "-",
+      },
+      {
+        id: "vendid",
+        header: t("nodeDetail.usbVendorId"),
+        cell: ({ vendid }) => vendid ?? "-",
+      },
+      {
+        id: "prodid",
+        header: t("nodeDetail.usbProductId"),
+        cell: ({ prodid }) => prodid ?? "-",
+      },
+      {
+        id: "manufacturer",
+        header: t("nodeDetail.usbManufacturer"),
+        cell: ({ manufacturer }) => manufacturer ?? "-",
+      },
+      {
+        id: "product",
+        header: t("nodeDetail.usbProduct"),
+        cell: ({ product }) => product ?? "-",
+      },
+      {
+        id: "speed",
+        header: t("nodeDetail.usbSpeed"),
+        cell: ({ speed }) => speed ?? "-",
+      },
+      {
+        id: "serial",
+        header: t("nodeDetail.usbSerial"),
+        cell: ({ serial }) => serial ?? "-",
+      },
+    ],
+    [t],
   );
 
   const syslogEmptyState = (
@@ -910,6 +2229,87 @@ export default function NodeDetailPage() {
     },
   ];
 
+  const smartItems = [
+    {
+      label: t("nodeDetail.smartStatus"),
+      value: smartData?.health ? (
+        <StatusIndicator type={getHealthStateType(smartData.health)}>
+          {smartData.health.toLowerCase() === "passed" ? t("nodeDetail.smartPassed") : smartData.health.toLowerCase() === "failed" ? t("nodeDetail.smartFailed") : smartData.health}
+        </StatusIndicator>
+      ) : "-",
+    },
+    {
+      label: t("nodeDetail.diskType"),
+      value: smartData?.type ?? "-",
+    },
+  ];
+
+  const subscriptionItems = [
+    {
+      label: t("nodeDetail.subscriptionStatus"),
+      value: subscriptionData?.status ? (
+        <StatusIndicator type={subscriptionData.status === "Active" ? "success" : "error"}>
+          {subscriptionData.status === "Active" ? t("nodeDetail.subscriptionActive") : t("nodeDetail.subscriptionInactive")}
+        </StatusIndicator>
+      ) : "-",
+    },
+    {
+      label: t("nodeDetail.subscriptionKey"),
+      value: subscriptionData?.key ?? "-",
+    },
+    {
+      label: t("nodeDetail.subscriptionLevel"),
+      value: subscriptionData?.level ?? "-",
+    },
+    {
+      label: t("nodeDetail.subscriptionProduct"),
+      value: subscriptionData?.productname ?? "-",
+    },
+    {
+      label: t("nodeDetail.subscriptionSocket"),
+      value: subscriptionData?.sockets != null ? String(subscriptionData.sockets) : "-",
+    },
+    {
+      label: t("nodeDetail.subscriptionExpiry"),
+      value: subscriptionData?.next ?? "-",
+    },
+    {
+      label: t("nodeDetail.subscriptionUrl"),
+      value: subscriptionData?.url ?? "-",
+    },
+    {
+      label: t("nodeDetail.subscriptionMessage"),
+      value: subscriptionData?.message ?? "-",
+    },
+  ];
+
+  const firewallOptionsItems = [
+    {
+      label: t("nodeDetail.firewallEnable"),
+      value: firewallOptions?.enable ? t("common.yes") : t("common.no"),
+    },
+    {
+      label: t("nodeDetail.firewallTcpFlagsLogLevel"),
+      value: firewallOptions?.tcp_flags_log_level ?? "-",
+    },
+    {
+      label: t("nodeDetail.firewallLogLevelIn"),
+      value: firewallOptions?.log_level_in ?? "-",
+    },
+    {
+      label: t("nodeDetail.firewallLogLevelOut"),
+      value: firewallOptions?.log_level_out ?? "-",
+    },
+    {
+      label: t("nodeDetail.firewallNdp"),
+      value: firewallOptions?.ndp ? t("common.yes") : t("common.no"),
+    },
+    {
+      label: t("nodeDetail.firewallLogSmurfs"),
+      value: firewallOptions?.log_smurfs ? t("common.yes") : t("common.no"),
+    },
+  ];
+
   const tabs: TabsProps.Tab[] = [
     {
       id: "summary",
@@ -1067,6 +2467,277 @@ export default function NodeDetailPage() {
       ),
     },
     {
+      id: "hosts",
+      label: t("nodeDetail.hosts"),
+      content: (
+        <SpaceBetween size="m">
+          {hostsError ? (
+            <Alert type="error" header={t("nodeDetail.failedToLoadHosts")}>{hostsError}</Alert>
+          ) : null}
+          {hostsLoading ? (
+            <Box textAlign="center" padding={{ top: "xxxl" }}><Spinner size="large" /></Box>
+          ) : (
+            <FormField label={t("nodeDetail.hostsFile")}>
+              <Textarea
+                value={hostsData?.data ?? ""}
+                readOnly
+                rows={10}
+                nativeTextareaAttributes={{ style: { fontFamily: "monospace" } }}
+              />
+            </FormField>
+          )}
+          <Box>
+            <Button onClick={openHostsModal} disabled={hostsLoading || !hostsData}>{t("nodeDetail.editHosts")}</Button>
+          </Box>
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "packages",
+      label: t("nodeDetail.packages"),
+      content: (
+        <SpaceBetween size="m">
+          {packagesError ? (
+            <Alert type="error" header={t("nodeDetail.failedToLoadPackages")}>{packagesError}</Alert>
+          ) : null}
+          <Table<PveNodePackage>
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="Package"
+            items={packages}
+            loading={packagesLoading || updatingPackages}
+            loadingText={updatingPackages ? t("nodeDetail.updatingPackageLists") : t("nodeDetail.packageUpdates")}
+            columnDefinitions={packagesColumns}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noPackageUpdates")}</Box>}
+            header={
+              <Header
+                variant="h2"
+                counter={`(${packages.length})`}
+                actions={<Button iconName="refresh" loading={updatingPackages} disabled={packagesLoading} onClick={() => void refreshPackageLists()}>{t("nodeDetail.updatePackageLists")}</Button>}
+              >
+                {t("nodeDetail.packageUpdates")}
+              </Header>
+            }
+          />
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "certificates",
+      label: t("nodeDetail.certificates"),
+      content: (
+        <SpaceBetween size="m">
+          {certsError ? (
+            <Alert type="error" header={t("nodeDetail.failedToLoadCertificates")}>{certsError}</Alert>
+          ) : null}
+          <Box color="text-body-secondary">{t("nodeDetail.restartRequired")}</Box>
+          <Table<PveNodeCertificate>
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="filename"
+            items={certificates}
+            loading={certsLoading}
+            loadingText={t("nodeDetail.certificateInfo")}
+            columnDefinitions={certificatesColumns}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noCertificates")}</Box>}
+            header={
+              <Header
+                variant="h2"
+                counter={`(${certificates.length})`}
+                actions={
+                  <SpaceBetween size="xs" direction="horizontal">
+                    <Button onClick={openUploadCertificateModal} disabled={certsLoading}>{t("nodeDetail.uploadCertificate")}</Button>
+                    <Button onClick={() => {
+                      setCertsError(null);
+                      setDeleteModalVisible(true);
+                    }} disabled={certsLoading}>{t("nodeDetail.deleteCertificate")}</Button>
+                    <Button iconName="refresh" onClick={() => void loadCertificates()} disabled={certsLoading}>{t("common.refresh")}</Button>
+                  </SpaceBetween>
+                }
+              >
+                {t("nodeDetail.certificateInfo")}
+              </Header>
+            }
+          />
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "disks",
+      label: t("nodeDetail.disks"),
+      content: (
+        <SpaceBetween size="m">
+          {disksError ? (
+            <Alert type="error" header={t("nodeDetail.failedToLoadDisks")}>{disksError}</Alert>
+          ) : null}
+          <Table<PveNodeDisk>
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="devpath"
+            items={disks}
+            loading={disksLoading}
+            loadingText={t("nodeDetail.diskList")}
+            columnDefinitions={disksColumns}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noDisks")}</Box>}
+            header={
+              <Header variant="h2" counter={`(${disks.length})`} actions={<Button iconName="refresh" onClick={() => void loadDisks()}>{t("common.refresh")}</Button>}>
+                {t("nodeDetail.diskList")}
+              </Header>
+            }
+          />
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "subscription",
+      label: t("nodeDetail.subscription"),
+      content: (
+        <SpaceBetween size="m">
+          {subscriptionError ? (
+            <Alert type="error" header={t("nodeDetail.failedToLoadSubscription")}>{subscriptionError}</Alert>
+          ) : null}
+          {subscriptionLoading ? (
+            <Box textAlign="center" padding={{ top: "xxxl" }}><Spinner size="large" /></Box>
+          ) : subscriptionData ? (
+            <ColumnLayout columns={1}>
+              <KeyValuePairs columns={2} items={subscriptionItems} />
+            </ColumnLayout>
+          ) : (
+            <Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noSubscription")}</Box>
+          )}
+          <SpaceBetween size="s">
+            <Header variant="h2">{t("nodeDetail.activateSubscription")}</Header>
+            <FormField label={t("nodeDetail.subscriptionKey")}>
+              <Input
+                value={subscriptionKey}
+                placeholder={t("nodeDetail.subscriptionKeyPlaceholder")}
+                onChange={({ detail }) => setSubscriptionKey(detail.value)}
+              />
+            </FormField>
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="primary" loading={activatingSubscription} onClick={() => void activateSubscription()}>
+                {t("nodeDetail.activateSubscription")}
+              </Button>
+              <Button
+                disabled={subscriptionLoading || (!subscriptionData?.key && !subscriptionData?.status)}
+                onClick={() => {
+                  setSubscriptionError(null);
+                  setRemoveSubscriptionModalVisible(true);
+                }}
+              >
+                {t("nodeDetail.removeSubscription")}
+              </Button>
+              <Button iconName="refresh" disabled={subscriptionLoading} onClick={() => void loadSubscription()}>{t("common.refresh")}</Button>
+            </SpaceBetween>
+          </SpaceBetween>
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "firewall",
+      label: t("nodeDetail.nodeFirewall"),
+      content: (
+        <SpaceBetween size="l">
+          {fwError ? (
+            <Alert type="error" header={t("nodeDetail.nodeFirewall")}>{fwError}</Alert>
+          ) : null}
+          <Table<PveNodeFirewallRule>
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy={({ pos, type }) => `${pos ?? type ?? "rule"}`}
+            items={firewallRules}
+            loading={fwRulesLoading}
+            loadingText={t("nodeDetail.nodeFirewallRules")}
+            columnDefinitions={firewallRulesColumns}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noFirewallRules")}</Box>}
+            header={
+              <Header
+                variant="h2"
+                counter={`(${firewallRules.length})`}
+                actions={
+                  <SpaceBetween size="xs" direction="horizontal">
+                    <Button onClick={() => openFirewallRuleModal()}>{t("nodeDetail.addFirewallRule")}</Button>
+                    <Button iconName="refresh" onClick={() => void loadFirewallRules()}>{t("common.refresh")}</Button>
+                  </SpaceBetween>
+                }
+              >
+                {t("nodeDetail.nodeFirewallRules")}
+              </Header>
+            }
+          />
+          <SpaceBetween size="m">
+            <Header
+              variant="h2"
+              actions={<Button onClick={openFirewallOptionsModal}>{t("nodeDetail.editFirewallOptions")}</Button>}
+            >
+              {t("nodeDetail.nodeFirewallOptions")}
+            </Header>
+            <ColumnLayout columns={1}>
+              <KeyValuePairs columns={2} items={firewallOptionsItems} />
+            </ColumnLayout>
+          </SpaceBetween>
+          <Table<PveNodeFirewallLogEntry>
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy={({ n, t: message }) => `${n ?? 0}-${message ?? "log"}`}
+            items={firewallLog}
+            loading={fwLogLoading}
+            loadingText={t("nodeDetail.nodeFirewallLog")}
+            columnDefinitions={firewallLogColumns}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noFirewallLog")}</Box>}
+            header={<Header variant="h2" counter={`(${firewallLog.length})`} actions={<Button iconName="refresh" onClick={() => void loadFirewallLog()}>{t("common.refresh")}</Button>}>{t("nodeDetail.nodeFirewallLog")}</Header>}
+          />
+        </SpaceBetween>
+      ),
+    },
+    {
+      id: "hardware",
+      label: t("nodeDetail.hardware"),
+      content: (
+        <SpaceBetween size="l">
+          {hwError ? (
+            <Alert type="error" header={t("nodeDetail.hardware")}>{hwError}</Alert>
+          ) : null}
+          <Table<PveNodePciDevice>
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy="id"
+            items={pciDevices}
+            loading={pciLoading}
+            loadingText={t("nodeDetail.pciDevices")}
+            columnDefinitions={pciColumns}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noPciDevices")}</Box>}
+            header={<Header variant="h2" counter={`(${pciDevices.length})`} actions={<Button iconName="refresh" onClick={() => void loadPciDevices()}>{t("common.refresh")}</Button>}>{t("nodeDetail.pciDevices")}</Header>}
+          />
+          <Table<PveNodeUsbDevice>
+            variant="borderless"
+            stickyHeader
+            resizableColumns
+            enableKeyboardNavigation
+            trackBy={({ busnum, devnum, vendid, prodid }) => `${busnum ?? 0}-${devnum ?? 0}-${vendid ?? ""}-${prodid ?? ""}`}
+            items={usbDevices}
+            loading={usbLoading}
+            loadingText={t("nodeDetail.usbDevices")}
+            columnDefinitions={usbColumns}
+            empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noUsbDevices")}</Box>}
+            header={<Header variant="h2" counter={`(${usbDevices.length})`} actions={<Button iconName="refresh" onClick={() => void loadUsbDevices()}>{t("common.refresh")}</Button>}>{t("nodeDetail.usbDevices")}</Header>}
+          />
+        </SpaceBetween>
+      ),
+    },
+    {
       id: "network",
       label: t("nodes.network"),
       content: (
@@ -1131,6 +2802,9 @@ export default function NodeDetailPage() {
         variant="h1"
         actions={
           <SpaceBetween size="xs" direction="horizontal">
+            <Button iconName="external" disabled={!!actionLoading} onClick={() => window.open(`/nodes/${node}/shell`, "_blank")}>
+              {t("nodeDetail.shell")}
+            </Button>
             <Button loading={actionLoading === "reboot"} disabled={!!actionLoading} onClick={() => setRebootModalVisible(true)}>
               {t("nodeDetail.reboot")}
             </Button>
@@ -1154,6 +2828,30 @@ export default function NodeDetailPage() {
                 }
                 if (activeTabId === "services") {
                   void loadServices();
+                }
+                if (activeTabId === "hosts") {
+                  void loadHosts();
+                }
+                if (activeTabId === "packages") {
+                  void loadPackages();
+                }
+                if (activeTabId === "certificates") {
+                  void loadCertificates();
+                }
+                if (activeTabId === "disks") {
+                  void loadDisks();
+                }
+                if (activeTabId === "subscription") {
+                  void loadSubscription();
+                }
+                if (activeTabId === "firewall") {
+                  void loadFirewallRules();
+                  void loadFirewallOptions();
+                  void loadFirewallLog();
+                }
+                if (activeTabId === "hardware") {
+                  void loadPciDevices();
+                  void loadUsbDevices();
                 }
               }}
             >
@@ -1297,6 +2995,336 @@ export default function NodeDetailPage() {
             <Input value={timezoneValue} placeholder={t("nodeDetail.timezonePlaceholder")} onChange={({ detail }) => setTimezoneValue(detail.value)} />
           </FormField>
         </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={hostsModalVisible}
+        onDismiss={() => {
+          setHostsModalVisible(false);
+          setHostsError(null);
+        }}
+        header={t("nodeDetail.editHosts")}
+        closeAriaLabel={t("nodeDetail.editHosts")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setHostsModalVisible(false);
+                  setHostsError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={hostsSaving} onClick={() => void saveHosts()}>{t("common.save")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {hostsError ? (
+            <Alert type="error" header={t("nodeDetail.failedToUpdateHosts")}>{hostsError}</Alert>
+          ) : null}
+          <FormField label={t("nodeDetail.hostsContent")}>
+            <Textarea
+              value={hostsFormContent}
+              rows={12}
+              onChange={({ detail }) => setHostsFormContent(detail.value)}
+              nativeTextareaAttributes={{ style: { fontFamily: "monospace" } }}
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={uploadModalVisible}
+        onDismiss={() => {
+          setUploadModalVisible(false);
+          setCertsError(null);
+        }}
+        header={t("nodeDetail.uploadCertificate")}
+        closeAriaLabel={t("nodeDetail.uploadCertificate")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setUploadModalVisible(false);
+                  setCertsError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={uploadSaving} onClick={() => void uploadCertificate()}>{t("common.save")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {certsError ? (
+            <Alert type="error" header={t("nodeDetail.failedToUploadCertificate")}>{certsError}</Alert>
+          ) : null}
+          <Alert type="info" header={t("nodeDetail.restartRequired")}>{t("nodeDetail.restartRequired")}</Alert>
+          <FormField label={t("nodeDetail.certificateKey")}>
+            <Textarea value={certKey} rows={8} placeholder={t("nodeDetail.certificateKeyPlaceholder")} onChange={({ detail }) => setCertKey(detail.value)} />
+          </FormField>
+          <FormField label={t("nodeDetail.certificateChain")}>
+            <Textarea value={certChain} rows={8} placeholder={t("nodeDetail.certificateChainPlaceholder")} onChange={({ detail }) => setCertChain(detail.value)} />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={deleteModalVisible}
+        onDismiss={() => {
+          setDeleteModalVisible(false);
+          setCertsError(null);
+        }}
+        header={t("nodeDetail.deleteCertificate")}
+        closeAriaLabel={t("nodeDetail.deleteCertificate")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setDeleteModalVisible(false);
+                  setCertsError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={deleteLoading} onClick={() => void deleteCertificate()}>{t("common.confirm")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {certsError ? (
+            <Alert type="error" header={t("nodeDetail.failedToDeleteCertificate")}>{certsError}</Alert>
+          ) : null}
+          <Box>{t("nodeDetail.confirmDeleteCertificate")}</Box>
+          <Box color="text-body-secondary">{t("nodeDetail.restartRequired")}</Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={removeSubscriptionModalVisible}
+        onDismiss={() => {
+          setRemoveSubscriptionModalVisible(false);
+          setSubscriptionError(null);
+        }}
+        header={t("nodeDetail.removeSubscription")}
+        closeAriaLabel={t("nodeDetail.removeSubscription")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setRemoveSubscriptionModalVisible(false)}>{t("common.cancel")}</Button>
+              <Button variant="primary" loading={removingSubscription} onClick={() => void removeSubscription()}>{t("common.confirm")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {subscriptionError ? (
+            <Alert type="error" header={t("nodeDetail.failedToRemoveSubscription")}>{subscriptionError}</Alert>
+          ) : null}
+          <Box>{t("nodeDetail.confirmRemoveSubscription")}</Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={fwRuleModalVisible}
+        onDismiss={() => {
+          setFwRuleModalVisible(false);
+          setFwError(null);
+        }}
+        header={t(fwRuleEditPos == null ? "nodeDetail.addFirewallRule" : "nodeDetail.editFirewallRule")}
+        closeAriaLabel={t(fwRuleEditPos == null ? "nodeDetail.addFirewallRule" : "nodeDetail.editFirewallRule")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setFwRuleModalVisible(false)}>{t("common.cancel")}</Button>
+              <Button variant="primary" loading={fwRuleSaving} onClick={() => void saveFirewallRule()}>{t("common.save")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {fwError ? (
+            <Alert type="error" header={t(fwRuleEditPos == null ? "nodeDetail.failedToCreateFirewallRule" : "nodeDetail.failedToUpdateFirewallRule")}>{fwError}</Alert>
+          ) : null}
+          <FormField label={t("nodeDetail.firewallType")}>
+            <Input value={fwRuleForm.type} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, type: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallAction")}>
+            <Input value={fwRuleForm.action} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, action: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallMacro")}>
+            <Input value={fwRuleForm.macro} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, macro: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallProtocol")}>
+            <Input value={fwRuleForm.proto} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, proto: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallSource")}>
+            <Input value={fwRuleForm.source} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, source: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallDest")}>
+            <Input value={fwRuleForm.dest} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, dest: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallDport")}>
+            <Input value={fwRuleForm.dport} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, dport: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallSport")}>
+            <Input value={fwRuleForm.sport} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, sport: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallComment")}>
+            <Textarea value={fwRuleForm.comment} rows={4} onChange={({ detail }) => setFwRuleForm((current) => ({ ...current, comment: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallEnabled")}>
+            <Button onClick={() => setFwRuleForm((current) => ({ ...current, enable: current.enable ? 0 : 1 }))}>
+              {fwRuleForm.enable ? t("common.yes") : t("common.no")}
+            </Button>
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={fwOptionsModalVisible}
+        onDismiss={() => {
+          setFwOptionsModalVisible(false);
+          setFwError(null);
+        }}
+        header={t("nodeDetail.editFirewallOptions")}
+        closeAriaLabel={t("nodeDetail.editFirewallOptions")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setFwOptionsModalVisible(false)}>{t("common.cancel")}</Button>
+              <Button variant="primary" loading={fwOptionsSaving} onClick={() => void saveFirewallOptions()}>{t("common.save")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {fwError ? (
+            <Alert type="error" header={t("nodeDetail.failedToUpdateFirewallOptions")}>{fwError}</Alert>
+          ) : null}
+          <FormField label={t("nodeDetail.firewallEnable")}>
+            <Input value={fwOptionsForm.enable} onChange={({ detail }) => setFwOptionsForm((current) => ({ ...current, enable: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallLogLevelIn")}>
+            <Input value={fwOptionsForm.log_level_in} onChange={({ detail }) => setFwOptionsForm((current) => ({ ...current, log_level_in: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallLogLevelOut")}>
+            <Input value={fwOptionsForm.log_level_out} onChange={({ detail }) => setFwOptionsForm((current) => ({ ...current, log_level_out: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallNdp")}>
+            <Input value={fwOptionsForm.ndp} onChange={({ detail }) => setFwOptionsForm((current) => ({ ...current, ndp: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallLogSmurfs")}>
+            <Input value={fwOptionsForm.log_smurfs} onChange={({ detail }) => setFwOptionsForm((current) => ({ ...current, log_smurfs: detail.value }))} />
+          </FormField>
+          <FormField label={t("nodeDetail.firewallTcpFlagsLogLevel")}>
+            <Input value={fwOptionsForm.tcp_flags_log_level} onChange={({ detail }) => setFwOptionsForm((current) => ({ ...current, tcp_flags_log_level: detail.value }))} />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={fwDeleteModalVisible}
+        onDismiss={() => {
+          setFwDeleteModalVisible(false);
+          setFwDeletePos(null);
+          setFwError(null);
+        }}
+        header={t("nodeDetail.deleteFirewallRule")}
+        closeAriaLabel={t("nodeDetail.deleteFirewallRule")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setFwDeleteModalVisible(false)}>{t("common.cancel")}</Button>
+              <Button variant="primary" loading={fwDeleting} onClick={() => void deleteFirewallRule()}>{t("common.confirm")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {fwError ? (
+            <Alert type="error" header={t("nodeDetail.failedToDeleteFirewallRule")}>{fwError}</Alert>
+          ) : null}
+          <Box>{t("nodeDetail.deleteFirewallRuleConfirmation")}</Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={smartModalVisible}
+        onDismiss={() => {
+          setSmartModalVisible(false);
+          setSmartError(null);
+          setSmartData(null);
+        }}
+        header={selectedDisk ? `${t("nodeDetail.smartData")} · ${selectedDisk.devpath}` : t("nodeDetail.smartData")}
+        closeAriaLabel={t("nodeDetail.smartData")}
+        size="large"
+        footer={
+          <Box float="right">
+            <Button variant="primary" onClick={() => {
+              setSmartModalVisible(false);
+              setSmartError(null);
+              setSmartData(null);
+            }}>{t("common.close")}</Button>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {smartError ? (
+            <Alert type="error" header={t("nodeDetail.failedToLoadSmart")}>{smartError}</Alert>
+          ) : null}
+          {smartLoading ? (
+            <Box textAlign="center" padding={{ top: "xxxl" }}><Spinner size="large" /></Box>
+          ) : (
+            <>
+              <ColumnLayout columns={1}>
+                <KeyValuePairs columns={2} items={smartItems} />
+              </ColumnLayout>
+              <Table<PveNodeDiskSmartAttribute>
+                variant="borderless"
+                trackBy={({ id, name }) => `${id ?? name ?? "smart"}`}
+                items={smartData?.attributes ?? []}
+                columnDefinitions={smartColumns}
+                empty={<Box textAlign="center" color="text-body-secondary" padding="xxl">{t("nodeDetail.noSmartData")}</Box>}
+                header={<Header variant="h2" counter={`(${smartData?.attributes?.length ?? 0})`}>{t("nodeDetail.smartData")}</Header>}
+              />
+            </>
+          )}
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={initGptModalVisible}
+        onDismiss={() => setInitGptModalVisible(false)}
+        header={t("nodeDetail.initGpt")}
+        closeAriaLabel={t("nodeDetail.initGpt")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setInitGptModalVisible(false)}>{t("common.cancel")}</Button>
+              <Button variant="primary" loading={diskActionLoading} onClick={() => void runDiskAction("initgpt")}>{t("common.confirm")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <Box>{t("nodeDetail.confirmInitGpt")}</Box>
+      </Modal>
+      <Modal
+        visible={wipeDiskModalVisible}
+        onDismiss={() => setWipeDiskModalVisible(false)}
+        header={t("nodeDetail.wipeDisk")}
+        closeAriaLabel={t("nodeDetail.wipeDisk")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setWipeDiskModalVisible(false)}>{t("common.cancel")}</Button>
+              <Button variant="primary" loading={diskActionLoading} onClick={() => void runDiskAction("wipedisk")}>{t("common.confirm")}</Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <Box>{t("nodeDetail.confirmWipeDisk")}</Box>
       </Modal>
     </SpaceBetween>
   );
