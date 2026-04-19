@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { onSessionExpired } from "@/app/lib/api-client";
 
 interface AuthContextValue {
   user: string | null;
@@ -82,6 +83,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         router.refresh();
       }
     })();
+  }, [router]);
+
+  useEffect(() => {
+    onSessionExpired(() => {
+      setUser(null);
+      setAuthenticated(false);
+      router.push("/login?expired=1");
+      router.refresh();
+    });
   }, [router]);
 
   const value = useMemo<AuthContextValue>(() => ({
