@@ -9,7 +9,9 @@
     "build": "next build",
     "start": "NODE_TLS_REJECT_UNAUTHORIZED=0 next start",
     "start:ws": "NODE_TLS_REJECT_UNAUTHORIZED=0 bun run server/ws-relay.ts",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@cloudscape-design/board-components": "^3.0.167",
@@ -25,6 +27,8 @@
   },
   "devDependencies": {
     "@svgr/webpack": "^8.1.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -32,7 +36,9 @@
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
-    "typescript": "^5"
+    "jsdom": "^29.0.2",
+    "typescript": "^5",
+    "vitest": "^4.1.4"
   },
   "ignoreScripts": [
     "sharp",
