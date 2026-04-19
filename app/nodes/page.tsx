@@ -6,12 +6,17 @@ import Alert from "@cloudscape-design/components/alert";
 import Box from "@cloudscape-design/components/box";
 import Button from "@cloudscape-design/components/button";
 import CollectionPreferences from "@cloudscape-design/components/collection-preferences";
+import Flashbar, { type FlashbarProps } from "@cloudscape-design/components/flashbar";
+import FormField from "@cloudscape-design/components/form-field";
 import Header from "@cloudscape-design/components/header";
+import Input from "@cloudscape-design/components/input";
 import Link from "@/app/components/app-link";
+import Modal from "@cloudscape-design/components/modal";
 import Pagination from "@cloudscape-design/components/pagination";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import Table, { type TableProps } from "@cloudscape-design/components/table";
+import Textarea from "@cloudscape-design/components/textarea";
 import TextFilter from "@cloudscape-design/components/text-filter";
 import type { CollectionPreferencesProps } from "@cloudscape-design/components/collection-preferences";
 import { useTranslation } from "@/app/lib/use-translation";
@@ -36,6 +41,20 @@ interface Preferences {
   contentDisplay: ReadonlyArray<CollectionPreferencesProps.ContentDisplayItem>;
 }
 
+interface JoinClusterForm {
+  joinInfo: string;
+  hostname: string;
+  password: string;
+  fingerprint: string;
+}
+
+interface JoinClusterErrors {
+  joinInfo?: string;
+  hostname?: string;
+  password?: string;
+  fingerprint?: string;
+}
+
 const DEFAULT_PREFERENCES: Preferences = {
   pageSize: 20,
   wrapLines: false,
@@ -48,6 +67,7 @@ const DEFAULT_PREFERENCES: Preferences = {
     { id: "memory", visible: true },
     { id: "disk", visible: true },
     { id: "uptime", visible: true },
+    { id: "actions", visible: true },
   ],
 };
 
@@ -72,27 +92,66 @@ function getStatusType(status: PveNode["status"]) {
   return status === "online" ? "success" : "error";
 }
 
-async function fetchProxmox<T>(path: string): Promise<T> {
-  const response = await fetch(path, { cache: "no-store" });
+async function fetchProxmox<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    cache: "no-store",
+    ...init,
+  });
+
+  const json = (await response.json().catch(() => null)) as { data?: T | string } | null;
+
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    throw new Error(typeof json?.data === "string" ? json.data : `Request failed with status ${response.status}`);
   }
-  const json = (await response.json()) as { data?: T };
-  return json.data as T;
+
+  return json?.data as T;
 }
+
+const DEFAULT_JOIN_CLUSTER_FORM: JoinClusterForm = {
+  joinInfo: "",
+  hostname: "",
+  password: "",
+  fingerprint: "",
+};
 
 export default function NodesPage() {
   const { t } = useTranslation();
   const [nodes, setNodes] = useState<PveNode[]>([]);
+  const [selectedItems, setSelectedItems] = useState<PveNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
+  const [flashbarItems, setFlashbarItems] = useState<FlashbarProps.MessageDefinition[]>([]);
+  const [joinClusterModalVisible, setJoinClusterModalVisible] = useState(false);
+  const [joinClusterForm, setJoinClusterForm] = useState<JoinClusterForm>(DEFAULT_JOIN_CLUSTER_FORM);
+  const [joinClusterErrors, setJoinClusterErrors] = useState<JoinClusterErrors>({});
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [wolLoadingNodes, setWolLoadingNodes] = useState<string[]>([]);
+
+  const pushFlash = useCallback((item: FlashbarProps.MessageDefinition) => {
+    setFlashbarItems((current) => [...current.filter((entry) => entry.id !== item.id), item]);
+  }, []);
+
+  const parseJoinInfo = useCallback((value: string) => {
+    const hostnameMatch = value.match(/(?:--link0\s+)?address=([^\s,]+)/i);
+    const fingerprintMatch = value.match(/(?:--fingerprint\s+|fingerprint=)([^\s,]+)/i);
+
+    return {
+      hostname: hostnameMatch?.[1] ?? "",
+      fingerprint: fingerprintMatch?.[1] ?? "",
+    };
+  }, []);
 
   const loadNodes = useCallback(async () => {
     try {
       setLoading(true);
       const data = await fetchProxmox<PveNode[]>("/api/proxmox/nodes");
-      setNodes(data ?? []);
+      const nextNodes = data ?? [];
+      setNodes(nextNodes);
+      setSelectedItems((current) => {
+        const nodeNames = new Set(nextNodes.map((node) => node.node));
+        return current.filter((node) => nodeNames.has(node.node)).map((node) => nextNodes.find((item) => item.node === node.node) ?? node);
+      });
       setError(null);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : t("nodes.failedToLoad"));
@@ -100,6 +159,151 @@ export default function NodesPage() {
       setLoading(false);
     }
   }, []);
+
+  const offlineSelectedItems = useMemo(() => selectedItems.filter((item) => item.status === "offline"), [selectedItems]);
+  const canWakeSelected = selectedItems.length > 0 && offlineSelectedItems.length === selectedItems.length && wolLoadingNodes.length === 0 && !joinLoading;
+
+  const handleJoinInfoChange = useCallback((value: string) => {
+    const parsed = parseJoinInfo(value);
+
+    setJoinClusterForm((current) => ({
+      ...current,
+      joinInfo: value,
+      hostname: parsed.hostname || current.hostname,
+      fingerprint: parsed.fingerprint || current.fingerprint,
+    }));
+
+    setJoinClusterErrors((current) => ({
+      ...current,
+      joinInfo: undefined,
+      hostname: parsed.hostname ? undefined : current.hostname,
+      fingerprint: parsed.fingerprint ? undefined : current.fingerprint,
+    }));
+  }, [parseJoinInfo]);
+
+  const closeJoinClusterModal = useCallback(() => {
+    setJoinClusterModalVisible(false);
+    setJoinClusterForm(DEFAULT_JOIN_CLUSTER_FORM);
+    setJoinClusterErrors({});
+  }, []);
+
+  const openJoinClusterModal = useCallback(() => {
+    setJoinClusterForm(DEFAULT_JOIN_CLUSTER_FORM);
+    setJoinClusterErrors({});
+    setJoinClusterModalVisible(true);
+  }, []);
+
+  const submitJoinCluster = useCallback(async () => {
+    const nextErrors: JoinClusterErrors = {};
+    const joinInfo = joinClusterForm.joinInfo.trim();
+    const hostname = joinClusterForm.hostname.trim();
+    const password = joinClusterForm.password.trim();
+    const fingerprint = joinClusterForm.fingerprint.trim();
+
+    if (!joinInfo) {
+      nextErrors.joinInfo = t("nodes.clusterJoinLinkRequired");
+    }
+    if (!hostname) {
+      nextErrors.hostname = t("nodes.peerHostnameRequired");
+    }
+    if (!password) {
+      nextErrors.password = t("nodes.joinPasswordRequired");
+    }
+    if (!fingerprint) {
+      nextErrors.fingerprint = t("nodes.joinFingerprintRequired");
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setJoinClusterErrors(nextErrors);
+      return;
+    }
+
+    try {
+      setJoinLoading(true);
+      setJoinClusterErrors({});
+
+      const body = new URLSearchParams({
+        hostname,
+        password,
+        fingerprint,
+        link0: joinInfo,
+      });
+
+      await fetchProxmox("/api/proxmox/cluster/config/join", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+
+      pushFlash({
+        type: "success",
+        content: t("nodes.joinSuccess"),
+        dismissible: true,
+        id: "nodes-join-success",
+      });
+
+      closeJoinClusterModal();
+      await loadNodes();
+    } catch (joinError) {
+      const message = joinError instanceof Error ? joinError.message : t("nodes.joinFailed");
+      pushFlash({
+        type: "error",
+        content: message || t("nodes.joinFailed"),
+        dismissible: true,
+        id: "nodes-join-failed",
+      });
+    } finally {
+      setJoinLoading(false);
+    }
+  }, [closeJoinClusterModal, joinClusterForm, loadNodes, pushFlash, t]);
+
+  const runWakeOnLan = useCallback(async (targetNodes: PveNode[]) => {
+    if (targetNodes.length === 0) {
+      return;
+    }
+
+    const offlineNodes = targetNodes.filter((item) => item.status === "offline");
+    if (offlineNodes.length === 0) {
+      return;
+    }
+
+    try {
+      setWolLoadingNodes((current) => [...new Set([...current, ...offlineNodes.map((item) => item.node)])]);
+
+      await Promise.all(
+        offlineNodes.map((item) =>
+          fetchProxmox(`/api/proxmox/nodes/${item.node}/wakeonlan`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams().toString(),
+          }),
+        ),
+      );
+
+      pushFlash({
+        type: "success",
+        content: t("nodes.wolSuccess"),
+        dismissible: true,
+        id: "nodes-wol-success",
+      });
+
+      await loadNodes();
+    } catch (wolError) {
+      const message = wolError instanceof Error ? wolError.message : t("nodes.wolFailed");
+      pushFlash({
+        type: "error",
+        content: message || t("nodes.wolFailed"),
+        dismissible: true,
+        id: "nodes-wol-failed",
+      });
+    } finally {
+      setWolLoadingNodes((current) => current.filter((node) => !offlineNodes.some((item) => item.node === node)));
+    }
+  }, [loadNodes, pushFlash, t]);
 
   useEffect(() => {
     void loadNodes();
@@ -150,8 +354,24 @@ export default function NodesPage() {
         sortingComparator: (a, b) => a.uptime - b.uptime,
         minWidth: 140,
       },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        cell: (item) => item.status === "offline" ? (
+          <Button
+            onClick={() => void runWakeOnLan([item])}
+            loading={wolLoadingNodes.includes(item.node)}
+            disabled={joinLoading}
+          >
+            {t("nodes.wakeOnLan")}
+          </Button>
+        ) : (
+          "-"
+        ),
+        minWidth: 180,
+      },
     ],
-    [t],
+    [joinLoading, runWakeOnLan, t, wolLoadingNodes],
   );
 
   const emptyState = (
@@ -210,6 +430,7 @@ export default function NodesPage() {
     pagination: {
       pageSize: preferences.pageSize,
     },
+    selection: {},
   });
 
   const noMatch = (
@@ -228,14 +449,88 @@ export default function NodesPage() {
 
   return (
     <SpaceBetween size="m">
+      {flashbarItems.length > 0 ? <Flashbar items={flashbarItems} /> : null}
       {error ? (
         <Alert type="error" header={t("nodes.failedToLoad")}>
           {error}
         </Alert>
       ) : null}
+      <Modal
+        visible={joinClusterModalVisible}
+        onDismiss={closeJoinClusterModal}
+        header={t("nodes.joinClusterModalTitle")}
+        closeAriaLabel={t("nodes.joinClusterModalTitle")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={closeJoinClusterModal}>{t("common.cancel")}</Button>
+              <Button variant="primary" loading={joinLoading} onClick={() => void submitJoinCluster()}>
+                {t("common.save")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          <Box color="text-body-secondary">{t("nodes.joinClusterDescription")}</Box>
+          <FormField
+            label={t("nodes.clusterJoinLink")}
+            errorText={joinClusterErrors.joinInfo}
+          >
+            <Textarea
+              value={joinClusterForm.joinInfo}
+              placeholder={t("nodes.clusterJoinLinkPlaceholder")}
+              onChange={({ detail }) => handleJoinInfoChange(detail.value)}
+            />
+          </FormField>
+          <FormField
+            label={t("nodes.peerHostname")}
+            errorText={joinClusterErrors.hostname}
+          >
+            <Input
+              value={joinClusterForm.hostname}
+              placeholder={t("nodes.peerHostnamePlaceholder")}
+              onChange={({ detail }) => {
+                setJoinClusterForm((current) => ({ ...current, hostname: detail.value }));
+                setJoinClusterErrors((current) => ({ ...current, hostname: undefined }));
+              }}
+            />
+          </FormField>
+          <FormField
+            label={t("nodes.joinPassword")}
+            errorText={joinClusterErrors.password}
+          >
+            <Input
+              type="password"
+              value={joinClusterForm.password}
+              placeholder={t("nodes.joinPasswordPlaceholder")}
+              onChange={({ detail }) => {
+                setJoinClusterForm((current) => ({ ...current, password: detail.value }));
+                setJoinClusterErrors((current) => ({ ...current, password: undefined }));
+              }}
+            />
+          </FormField>
+          <FormField
+            label={t("nodes.joinFingerprint")}
+            errorText={joinClusterErrors.fingerprint}
+          >
+            <Input
+              value={joinClusterForm.fingerprint}
+              placeholder={t("nodes.joinFingerprintPlaceholder")}
+              onChange={({ detail }) => {
+                setJoinClusterForm((current) => ({ ...current, fingerprint: detail.value }));
+                setJoinClusterErrors((current) => ({ ...current, fingerprint: undefined }));
+              }}
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
       <Table
         {...collectionProps}
         items={items}
+        selectedItems={selectedItems}
+        onSelectionChange={({ detail }) => setSelectedItems(detail.selectedItems)}
+        selectionType="multi"
         columnDefinitions={columnDefinitions}
         variant="full-page"
         stickyHeader
@@ -255,7 +550,15 @@ export default function NodesPage() {
             variant="h1"
             counter={headerCounter}
             description={t("nodes.manageDescription")}
-            actions={<Button iconName="refresh" onClick={() => void loadNodes()}>{t("common.refresh")}</Button>}
+            actions={
+              <SpaceBetween size="xs" direction="horizontal">
+                <Button disabled={joinLoading || wolLoadingNodes.length > 0} onClick={openJoinClusterModal}>{t("nodes.joinCluster")}</Button>
+                <Button loading={wolLoadingNodes.length > 0} disabled={!canWakeSelected} onClick={() => void runWakeOnLan(offlineSelectedItems)}>
+                  {t("nodes.wakeOnLan")}
+                </Button>
+                <Button iconName="refresh" disabled={joinLoading || wolLoadingNodes.length > 0} onClick={() => void loadNodes()}>{t("common.refresh")}</Button>
+              </SpaceBetween>
+            }
           >
             {t("nodes.nodes")}
           </Header>
@@ -312,6 +615,7 @@ export default function NodesPage() {
                 { id: "memory", label: t("common.memory") },
                 { id: "disk", label: t("common.disk") },
                 { id: "uptime", label: t("common.uptime") },
+                { id: "actions", label: t("common.actions") },
               ],
             }}
           />
