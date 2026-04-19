@@ -8,6 +8,8 @@ interface TrackedTask {
   node: string;
   description: string;
   startedAt: number;
+  progress?: number;
+  statusText?: string;
 }
 
 interface NotificationContextValue {
@@ -68,14 +70,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const trackTask = useCallback(
     (upid: string, node: string, description: string) => {
-      setTrackedTasks((prev) => [...prev, { upid, node, description, startedAt: Date.now() }]);
+      setTrackedTasks((prev) => [...prev, { upid, node, description, startedAt: Date.now(), progress: 0 }]);
 
       const id = `task-${++notificationId}`;
       setNotifications((prev) => [
         {
           id,
           type: "in-progress" as FlashbarProps.Type,
-          content: description,
+          content: `${description} (0%)`,
           dismissible: false,
           loading: true,
         },
@@ -109,7 +111,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
             setNotifications((prev) =>
               prev
-                .filter((n) => !n.loading || n.content !== task.description)
+                .filter((n) => !n.loading || !n.content?.toString().startsWith(task.description))
                 .concat([
                   {
                     id: `task-done-${++notificationId}`,
@@ -125,6 +127,45 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 prev.filter((n) => n.content !== displayContent),
               );
             }, ok ? 5000 : 10000);
+          } else {
+            const logRes = await fetch(
+              `/api/proxmox/nodes/${task.node}/tasks/${encodeURIComponent(task.upid)}/log?limit=5&start=0`,
+              { cache: "no-store" },
+            );
+            let progressPct = 0;
+            let statusLine = "";
+            if (logRes.ok) {
+              const logJson = await logRes.json();
+              const lines: { n: number; t: string }[] = logJson.data ?? [];
+              const total = logJson.total ?? 0;
+              if (total > 0 && lines.length > 0) {
+                const lastLine = lines[lines.length - 1]?.t ?? "";
+                const pctMatch = lastLine.match(/(\d+(?:\.\d+)?)%/);
+                if (pctMatch) {
+                  progressPct = Math.min(99, Math.round(parseFloat(pctMatch[1])));
+                }
+                statusLine = lastLine;
+              }
+            }
+
+            const elapsed = Math.round((Date.now() - task.startedAt) / 1000);
+            const progressText = progressPct > 0
+              ? `${task.description} (${progressPct}% - ${elapsed}s)`
+              : `${task.description} (${elapsed}s)`;
+
+            setTrackedTasks((prev) =>
+              prev.map((t) =>
+                t.upid === task.upid ? { ...t, progress: progressPct, statusText: statusLine } : t,
+              ),
+            );
+
+            setNotifications((prev) =>
+              prev.map((n) =>
+                n.loading && n.content?.toString().startsWith(task.description)
+                  ? { ...n, content: progressText }
+                  : n,
+              ),
+            );
           }
         } catch {
           completed.push(task);
