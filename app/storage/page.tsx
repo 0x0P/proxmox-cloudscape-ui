@@ -97,7 +97,6 @@ interface Preferences {
   contentDisplay: ReadonlyArray<CollectionPreferencesProps.ContentDisplayItem>;
 }
 
-const STORAGE_TYPES: StorageType[] = ["dir", "nfs", "cifs", "lvm", "lvmthin", "zfspool"];
 const ALL_CONTENT_TYPES: ContentType[] = ["images", "rootdir", "vztmpl", "iso", "backup", "snippets"];
 const FILE_CONTENT_TYPES: ContentType[] = ["images", "rootdir", "vztmpl", "iso", "backup", "snippets"];
 const BLOCK_CONTENT_TYPES: ContentType[] = ["images", "rootdir"];
@@ -802,7 +801,7 @@ export default function StoragePage() {
 
   const headerCounter = filterProps.filteringText ? `(${filteredItemsCount}/${storages.length})` : `(${storages.length})`;
 
-  const renderTypeSpecificFields = (mode: "create" | "edit") => {
+  const renderTypeSpecificFields = () => {
     if (form.type === "dir") {
       return (
         <FormField label={t("storage.path")} errorText={!form.path.trim() && submitting ? t("storage.pathRequired") : undefined}>
@@ -904,7 +903,7 @@ export default function StoragePage() {
               onChange={({ detail }) => setFormValue("baseStorage", detail.value)}
             />
           </FormField>
-          <FormField label={t("storage.baseVolume")} errorText={mode === "create" || mode === "edit" ? undefined : undefined}>
+          <FormField label={t("storage.baseVolume")}>
             <Input
               value={form.baseVolume}
               placeholder={t("storage.baseVolumePlaceholder")}
@@ -1012,7 +1011,7 @@ export default function StoragePage() {
         </FormField>
       </ColumnLayout>
 
-      {renderTypeSpecificFields(mode)}
+      {renderTypeSpecificFields()}
     </SpaceBetween>
   );
 
@@ -1049,7 +1048,7 @@ export default function StoragePage() {
             actions={
               <SpaceBetween direction="horizontal" size="xs">
                 <Button variant="primary" onClick={openCreateModal}>{t("storage.createStorage")}</Button>
-                <Button variant="primary" onClick={() => router.push("/storage/upload")}>{t("storage.upload")}</Button>
+                <Button onClick={() => router.push("/storage/upload")}>{t("storage.upload")}</Button>
                 <Button iconName="refresh" onClick={() => void loadStorages()}>{t("common.refresh")}</Button>
               </SpaceBetween>
             }

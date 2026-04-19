@@ -2383,6 +2383,321 @@ export default function ContainerDetailPage(props: { params: Promise<{ ctid: str
         </SpaceBetween>
       </Modal>
       <Modal
+        visible={optionsModalVisible}
+        onDismiss={() => {
+          setOptionsModalVisible(false);
+          setOptionsError(null);
+        }}
+        header={t("containers.editOptions")}
+        closeAriaLabel={t("containers.editOptions")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setOptionsModalVisible(false);
+                  setOptionsError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={optionsSaveLoading} onClick={() => void saveOptions()}>
+                {t("common.save")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {optionsError ? <Alert type="error">{optionsError}</Alert> : null}
+          <Toggle checked={optionsForm.onboot} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, onboot: detail.checked }))}>
+            {t("containers.startOnBootLabel")}
+          </Toggle>
+          <Toggle checked={optionsForm.protection} onChange={({ detail }) => setOptionsForm((current) => ({ ...current, protection: detail.checked }))}>
+            {t("containers.protectionLabel")}
+          </Toggle>
+          <FormField label={t("containers.consoleModeLabel")}>
+            <Select
+              selectedOption={consoleModeOptions.find((option) => option.value === optionsForm.cmode) ?? null}
+              onChange={({ detail }) => setOptionsForm((current) => ({ ...current, cmode: optionValue(detail.selectedOption) || "console" }))}
+              options={consoleModeOptions}
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={dnsModalVisible}
+        onDismiss={() => {
+          setDnsModalVisible(false);
+          setDnsError(null);
+        }}
+        header={t("containers.editDns")}
+        closeAriaLabel={t("containers.editDns")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setDnsModalVisible(false);
+                  setDnsError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={dnsSaveLoading} onClick={() => void saveDns()}>
+                {t("common.save")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {dnsError ? <Alert type="error">{dnsError}</Alert> : null}
+          <FormField label={t("containers.dnsServerLabel")}>
+            <Input
+              value={dnsForm.nameserver}
+              placeholder={t("containers.dnsServerPlaceholder")}
+              onChange={({ detail }) => setDnsForm((current) => ({ ...current, nameserver: detail.value }))}
+            />
+          </FormField>
+          <FormField label={t("containers.searchDomainLabel")}>
+            <Input
+              value={dnsForm.searchdomain}
+              placeholder={t("containers.searchDomainPlaceholder")}
+              onChange={({ detail }) => setDnsForm((current) => ({ ...current, searchdomain: detail.value }))}
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={createFirewallRuleVisible}
+        onDismiss={() => setCreateFirewallRuleVisible(false)}
+        header={t("containers.addFirewallRule")}
+        closeAriaLabel={t("containers.addFirewallRule")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setCreateFirewallRuleVisible(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={firewallSubmitting} onClick={() => void submitFirewallRule("create")}>
+                {t("common.create")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {firewallActionError ? <Alert type="error">{firewallActionError}</Alert> : null}
+          <FormField label={t("firewall.type")}>
+            <Select
+              selectedOption={firewallTypeOptions.find((option) => option.value === firewallRuleForm.type) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, type: optionValue(detail.selectedOption) || "in" }))}
+              options={firewallTypeOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.action")}>
+            <Select
+              selectedOption={firewallActionOptions.find((option) => option.value === firewallRuleForm.action) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, action: optionValue(detail.selectedOption) || "ACCEPT" }))}
+              options={firewallActionOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.protocol")}>
+            <Select
+              selectedOption={firewallProtocolOptions.find((option) => option.value === firewallRuleForm.proto) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, proto: optionValue(detail.selectedOption) }))}
+              options={firewallProtocolOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.source")}>
+            <Input value={firewallRuleForm.source} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, source: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.destination")}>
+            <Input value={firewallRuleForm.dest} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, dest: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.destinationPort")}>
+            <Input value={firewallRuleForm.dport} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, dport: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.comment")}>
+            <Textarea value={firewallRuleForm.comment} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, comment: detail.value }))} rows={4} />
+          </FormField>
+          <Toggle checked={firewallRuleForm.enable} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, enable: detail.checked }))}>
+            {t("firewall.enable")}
+          </Toggle>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={editFirewallRuleVisible}
+        onDismiss={() => setEditFirewallRuleVisible(false)}
+        header={t("containers.editFirewallRule")}
+        closeAriaLabel={t("containers.editFirewallRule")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setEditFirewallRuleVisible(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={firewallSubmitting} onClick={() => void submitFirewallRule("edit")}>
+                {t("common.save")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {firewallActionError ? <Alert type="error">{firewallActionError}</Alert> : null}
+          <FormField label={t("firewall.type")}>
+            <Select
+              selectedOption={firewallTypeOptions.find((option) => option.value === firewallRuleForm.type) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, type: optionValue(detail.selectedOption) || "in" }))}
+              options={firewallTypeOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.action")}>
+            <Select
+              selectedOption={firewallActionOptions.find((option) => option.value === firewallRuleForm.action) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, action: optionValue(detail.selectedOption) || "ACCEPT" }))}
+              options={firewallActionOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.protocol")}>
+            <Select
+              selectedOption={firewallProtocolOptions.find((option) => option.value === firewallRuleForm.proto) ?? null}
+              onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, proto: optionValue(detail.selectedOption) }))}
+              options={firewallProtocolOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.source")}>
+            <Input value={firewallRuleForm.source} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, source: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.destination")}>
+            <Input value={firewallRuleForm.dest} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, dest: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.destinationPort")}>
+            <Input value={firewallRuleForm.dport} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, dport: detail.value }))} />
+          </FormField>
+          <FormField label={t("firewall.comment")}>
+            <Textarea value={firewallRuleForm.comment} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, comment: detail.value }))} rows={4} />
+          </FormField>
+          <Toggle checked={firewallRuleForm.enable} onChange={({ detail }) => setFirewallRuleForm((current) => ({ ...current, enable: detail.checked }))}>
+            {t("firewall.enable")}
+          </Toggle>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={deleteFirewallRuleVisible}
+        onDismiss={() => setDeleteFirewallRuleVisible(false)}
+        header={t("containers.deleteFirewallRule")}
+        closeAriaLabel={t("containers.deleteFirewallRule")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setDeleteFirewallRuleVisible(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={firewallSubmitting} onClick={() => void deleteFirewallRule()}>
+                {t("common.delete")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {firewallActionError ? <Alert type="error">{firewallActionError}</Alert> : null}
+          <Box>
+            {selectedFirewallRule
+              ? interpolate(t("containers.deleteFirewallRuleConfirmation"), { pos: selectedFirewallRule.pos })
+              : null}
+          </Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={editFirewallOptionsVisible}
+        onDismiss={() => setEditFirewallOptionsVisible(false)}
+        header={t("containers.editFirewallOptions")}
+        closeAriaLabel={t("containers.editFirewallOptions")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button variant="link" onClick={() => setEditFirewallOptionsVisible(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={firewallSubmitting} onClick={() => void saveFirewallOptions()}>
+                {t("common.save")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {firewallActionError ? <Alert type="error">{firewallActionError}</Alert> : null}
+          <Toggle checked={firewallOptionsForm.enable} onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, enable: detail.checked }))}>
+            {t("containers.firewallEnabled")}
+          </Toggle>
+          <Toggle checked={firewallOptionsForm.dhcp} onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, dhcp: detail.checked }))}>
+            {t("containers.dhcp")}
+          </Toggle>
+          <Toggle checked={firewallOptionsForm.macfilter} onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, macfilter: detail.checked }))}>
+            {t("containers.macFilter")}
+          </Toggle>
+          <FormField label={t("firewall.policyIn")}>
+            <Select
+              selectedOption={firewallActionOptions.find((option) => option.value === firewallOptionsForm.policyIn) ?? null}
+              onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, policyIn: optionValue(detail.selectedOption) || "DROP" }))}
+              options={firewallActionOptions}
+            />
+          </FormField>
+          <FormField label={t("firewall.policyOut")}>
+            <Select
+              selectedOption={firewallActionOptions.find((option) => option.value === firewallOptionsForm.policyOut) ?? null}
+              onChange={({ detail }) => setFirewallOptionsForm((current) => ({ ...current, policyOut: optionValue(detail.selectedOption) || "ACCEPT" }))}
+              options={firewallActionOptions}
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
+      <Modal
+        visible={deleteBackupVisible}
+        onDismiss={() => {
+          setDeleteBackupVisible(false);
+          setSelectedBackup(null);
+          setBackupActionError(null);
+        }}
+        header={t("containers.deleteBackup")}
+        closeAriaLabel={t("containers.deleteBackup")}
+        footer={
+          <Box float="right">
+            <SpaceBetween size="xs" direction="horizontal">
+              <Button
+                variant="link"
+                onClick={() => {
+                  setDeleteBackupVisible(false);
+                  setSelectedBackup(null);
+                  setBackupActionError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" loading={backupSubmitting} onClick={() => void deleteBackup()}>
+                {t("common.delete")}
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          {backupActionError ? <Alert type="error">{backupActionError}</Alert> : null}
+          <Box>
+            {selectedBackup
+              ? interpolate(t("containers.deleteBackupConfirmation"), { volid: selectedBackup.volid })
+              : null}
+          </Box>
+        </SpaceBetween>
+      </Modal>
+      <Modal
         visible={editModalVisible}
         onDismiss={() => {
           setEditModalVisible(false);
