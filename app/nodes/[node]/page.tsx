@@ -1085,7 +1085,7 @@ export default function NodeDetailPage() {
       });
 
       await fetchProxmox(`/api/proxmox/nodes/${node}/hosts`, {
-        method: "PUT",
+        method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
@@ -2505,7 +2505,7 @@ export default function NodeDetailPage() {
             stickyHeader
             resizableColumns
             enableKeyboardNavigation
-            trackBy="Package"
+            trackBy={(item) => `${item.Package}-${item.Version ?? item.OldVersion ?? ""}`}
             items={packages}
             loading={packagesLoading || updatingPackages}
             loadingText={updatingPackages ? t("nodeDetail.updatingPackageLists") : t("nodeDetail.packageUpdates")}
