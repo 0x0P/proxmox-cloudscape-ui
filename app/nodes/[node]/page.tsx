@@ -947,12 +947,14 @@ export default function NodeDetailPage() {
       setDnsSaving(true);
       setDnsError(null);
 
-      const body = new URLSearchParams({
-        search,
-        dns1: dnsForm.dns1?.trim() ?? "",
-        dns2: dnsForm.dns2?.trim() ?? "",
-        dns3: dnsForm.dns3?.trim() ?? "",
-      });
+      const params: Record<string, string> = { search };
+      const dns1 = dnsForm.dns1?.trim() ?? "";
+      const dns2 = dnsForm.dns2?.trim() ?? "";
+      const dns3 = dnsForm.dns3?.trim() ?? "";
+      if (dns1) params.dns1 = dns1;
+      if (dns2) params.dns2 = dns2;
+      if (dns3) params.dns3 = dns3;
+      const body = new URLSearchParams(params);
 
       await fetchProxmox(`/api/proxmox/nodes/${node}/dns`, {
         method: "PUT",
