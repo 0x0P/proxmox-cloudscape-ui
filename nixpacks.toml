@@ -11,4 +11,4 @@ cmds = [
 ]
 
 [start]
-cmd = "node .next/standalone/server.js"
+cmd = "NODE_TLS_REJECT_UNAUTHORIZED=0 node .next/standalone/server.js"
