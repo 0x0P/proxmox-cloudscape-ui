@@ -5,7 +5,11 @@ nixPkgs = ["nodejs_22", "bun"]
 cmds = ["bun install --frozen-lockfile"]
 
 [phases.build]
-cmds = ["bun run build"]
+cmds = [
+  "bun run build",
+  "cp -r public .next/standalone/public",
+  "cp -r .next/static .next/standalone/.next/static"
+]
 
 [start]
 cmd = "node .next/standalone/server.js"
