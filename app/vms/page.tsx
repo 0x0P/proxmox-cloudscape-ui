@@ -346,7 +346,7 @@ export default function VirtualMachinesPage() {
             {t("vms.noVirtualMachinesAvailable")}
           </Box>
         </div>
-        <Button variant="primary" onClick={() => router.push("/vms/create")}>{t("vms.launchInstance")}</Button>
+         <Button onClick={() => router.push("/vms/create")}>{t("vms.launchInstance")}</Button>
       </SpaceBetween>
     </Box>
   );
@@ -409,14 +409,14 @@ export default function VirtualMachinesPage() {
           <Box float="right">
             <SpaceBetween size="xs" direction="horizontal">
               <Button variant="link" onClick={handleCloseDelete}>{t("common.cancel")}</Button>
-              <Button
-                variant="primary"
-                loading={actionLoading === "delete"}
-                disabled={deleteConfirmText !== deleteConfirmPhrase}
-                onClick={() => void runDelete()}
-              >
-                {t("common.delete")}
-              </Button>
+               <Button
+                 variant="normal"
+                 loading={actionLoading === "delete"}
+                 disabled={deleteConfirmText !== deleteConfirmPhrase}
+                 onClick={() => void runDelete()}
+               >
+                 {t("common.delete")}
+               </Button>
             </SpaceBetween>
           </Box>
         }
@@ -475,12 +475,6 @@ export default function VirtualMachinesPage() {
             counter={headerCounter}
             actions={
               <SpaceBetween size="xs" direction="horizontal">
-                <Button variant="primary" disabled={!!actionLoading} onClick={() => router.push("/vms/create")}>
-                  {t("vms.launchInstance")}
-                </Button>
-                <Button disabled={!canOpenConsole} onClick={() => router.push(`/vms/${selectedItems[0]?.vmid}/console`)}>
-                  {t("vms.console")}
-                </Button>
                 <Button loading={actionLoading === "start"} disabled={!canStart} onClick={() => void runPowerAction("start")}>
                   {t("vms.start")}
                 </Button>
@@ -490,10 +484,16 @@ export default function VirtualMachinesPage() {
                 <Button loading={actionLoading === "reboot"} disabled={!canReboot} onClick={() => void runPowerAction("reboot")}>
                   {t("vms.reboot")}
                 </Button>
+                <Button disabled={!canOpenConsole} onClick={() => router.push(`/vms/${selectedItems[0]?.vmid}/console`)}>
+                  {t("vms.console")}
+                </Button>
                 <Button loading={actionLoading === "delete"} disabled={!canDelete} onClick={handleOpenDelete}>
                   {t("vms.delete")}
                 </Button>
                 <Button iconName="refresh" ariaLabel={t("common.refresh")} disabled={!!actionLoading} onClick={() => void loadVms()} />
+                <Button variant="primary" disabled={!!actionLoading} onClick={() => router.push("/vms/create")}>
+                  {t("vms.launchInstance")}
+                </Button>
               </SpaceBetween>
             }
           >

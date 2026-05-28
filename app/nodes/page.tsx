@@ -552,11 +552,11 @@ export default function NodesPage() {
             description={t("nodes.manageDescription")}
             actions={
               <SpaceBetween size="xs" direction="horizontal">
-                <Button disabled={joinLoading || wolLoadingNodes.length > 0} onClick={openJoinClusterModal}>{t("nodes.joinCluster")}</Button>
                 <Button loading={wolLoadingNodes.length > 0} disabled={!canWakeSelected} onClick={() => void runWakeOnLan(offlineSelectedItems)}>
                   {t("nodes.wakeOnLan")}
                 </Button>
-                <Button iconName="refresh" disabled={joinLoading || wolLoadingNodes.length > 0} onClick={() => void loadNodes()}>{t("common.refresh")}</Button>
+                <Button iconName="refresh" ariaLabel={t("common.refresh")} disabled={joinLoading || wolLoadingNodes.length > 0} onClick={() => void loadNodes()} />
+                <Button variant="primary" disabled={joinLoading || wolLoadingNodes.length > 0} onClick={openJoinClusterModal}>{t("nodes.joinCluster")}</Button>
               </SpaceBetween>
             }
           >

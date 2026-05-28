@@ -346,7 +346,7 @@ export default function ContainersPage() {
           {t("containers.noContainersAvailable")}
           </Box>
         </div>
-        <Button variant="primary" onClick={() => router.push("/containers/create")}>{t("containers.createContainer")}</Button>
+         <Button onClick={() => router.push("/containers/create")}>{t("containers.createContainer")}</Button>
       </SpaceBetween>
     </Box>
   );
@@ -416,14 +416,14 @@ export default function ContainersPage() {
           <Box float="right">
             <SpaceBetween size="xs" direction="horizontal">
               <Button variant="link" onClick={handleCloseDelete}>{t("common.cancel")}</Button>
-              <Button
-                variant="primary"
-                loading={actionLoading === "delete"}
-                disabled={deleteConfirmText !== deleteConfirmPhrase}
-                onClick={() => void runDelete()}
-              >
-                {t("common.delete")}
-              </Button>
+               <Button
+                 variant="normal"
+                 loading={actionLoading === "delete"}
+                 disabled={deleteConfirmText !== deleteConfirmPhrase}
+                 onClick={() => void runDelete()}
+               >
+                 {t("common.delete")}
+               </Button>
             </SpaceBetween>
           </Box>
         }
@@ -480,12 +480,6 @@ export default function ContainersPage() {
             description={t("containers.manageDescription")}
             actions={
               <SpaceBetween size="xs" direction="horizontal">
-                <Button variant="primary" disabled={!!actionLoading} onClick={() => router.push("/containers/create")}>
-                  {t("containers.createContainer")}
-                </Button>
-                <Button disabled={!canOpenConsole} onClick={() => router.push(`/containers/${selectedItems[0]?.vmid}/console`)}>
-                  {t("containers.console")}
-                </Button>
                 <Button loading={actionLoading === "start"} disabled={!canStart} onClick={() => void runPowerAction("start")}>
                   {t("containers.start")}
                 </Button>
@@ -495,10 +489,16 @@ export default function ContainersPage() {
                 <Button loading={actionLoading === "reboot"} disabled={!canReboot} onClick={() => void runPowerAction("reboot")}>
                   {t("containers.reboot")}
                 </Button>
+                <Button disabled={!canOpenConsole} onClick={() => router.push(`/containers/${selectedItems[0]?.vmid}/console`)}>
+                  {t("containers.console")}
+                </Button>
                 <Button loading={actionLoading === "delete"} disabled={!canDelete} onClick={handleOpenDelete}>
                   {t("containers.delete")}
                 </Button>
                 <Button iconName="refresh" ariaLabel={t("common.refresh")} disabled={!!actionLoading} onClick={() => void loadContainers()} />
+                <Button variant="primary" disabled={!!actionLoading} onClick={() => router.push("/containers/create")}>
+                  {t("containers.createContainer")}
+                </Button>
               </SpaceBetween>
             }
           >

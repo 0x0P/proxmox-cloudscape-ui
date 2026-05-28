@@ -1047,9 +1047,9 @@ export default function StoragePage() {
             description={t("storage.manageDescriptionLong")}
             actions={
               <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="primary" onClick={openCreateModal}>{t("storage.createStorage")}</Button>
                 <Button onClick={() => router.push("/storage/upload")}>{t("storage.upload")}</Button>
-                <Button iconName="refresh" onClick={() => void loadStorages()}>{t("common.refresh")}</Button>
+                <Button iconName="refresh" ariaLabel={t("common.refresh")} onClick={() => void loadStorages()} />
+                <Button variant="primary" onClick={openCreateModal}>{t("storage.createStorage")}</Button>
               </SpaceBetween>
             }
           >
@@ -1160,7 +1160,7 @@ export default function StoragePage() {
           <Box float="right">
             <SpaceBetween direction="horizontal" size="xs">
               <Button onClick={closeDeleteModal}>{t("common.cancel")}</Button>
-              <Button variant="primary" loading={submitting} onClick={() => void handleDeleteStorage()}>{t("common.delete")}</Button>
+              <Button variant="normal" loading={submitting} onClick={() => void handleDeleteStorage()}>{t("common.delete")}</Button>
             </SpaceBetween>
           </Box>
         }

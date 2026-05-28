@@ -1065,9 +1065,7 @@ export default function DashboardPage() {
         actions={
           <SpaceBetween size="xs" direction="horizontal">
             <Button onClick={handleResetLayout}>{t("dashboard.resetLayout")}</Button>
-            <Button iconName="refresh" onClick={refresh}>
-              {t("common.refresh")}
-            </Button>
+            <Button iconName="refresh" ariaLabel={t("common.refresh")} onClick={refresh} />
           </SpaceBetween>
         }
       >
