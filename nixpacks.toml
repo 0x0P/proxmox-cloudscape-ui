@@ -12,4 +12,4 @@ cmds = [
 ]
 
 [start]
-cmd = "cd .next/standalone && NODE_TLS_REJECT_UNAUTHORIZED=0 node ws-relay.js & NODE_TLS_REJECT_UNAUTHORIZED=0 node server.js"
+cmd = "NODE_TLS_REJECT_UNAUTHORIZED=0 node .next/standalone/ws-relay.js & NODE_TLS_REJECT_UNAUTHORIZED=0 node .next/standalone/server.js"
