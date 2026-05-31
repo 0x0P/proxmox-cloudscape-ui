@@ -482,7 +482,7 @@ export default function CreateVirtualMachinePage() {
       `format=${diskFormat}`,
       `cache=${diskCache}`,
       `iothread=${boolToApiValue(ioThreadEnabled)}`,
-      `discard=${boolToApiValue(discardEnabled)}`,
+      `discard=${discardEnabled ? "on" : "ignore"}`,
       `ssd=${boolToApiValue(ssdEmulationEnabled)}`,
     ];
 
