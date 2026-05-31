@@ -199,6 +199,18 @@ function buildFormState(network?: PveNetwork): NetworkFormState {
   };
 }
 
+function cidrToNetmask(cidr: string): string {
+  const bits = parseInt(cidr, 10);
+  if (isNaN(bits) || bits < 0 || bits > 32) return cidr;
+  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  return [
+    (mask >>> 24) & 255,
+    (mask >>> 16) & 255,
+    (mask >>> 8) & 255,
+    mask & 255,
+  ].join(".");
+}
+
 function parseIpv4Cidr(value: string) {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -206,9 +218,10 @@ function parseIpv4Cidr(value: string) {
   }
 
   const [addressPart, maskPart] = trimmed.split("/");
+  const rawMask = maskPart?.trim() ?? "";
   return {
     address: addressPart?.trim() ?? "",
-    netmask: maskPart?.trim() ?? "",
+    netmask: rawMask.includes(".") ? rawMask : cidrToNetmask(rawMask),
   };
 }
 
