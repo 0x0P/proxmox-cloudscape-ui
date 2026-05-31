@@ -7,8 +7,9 @@ cmds = ["bun install --frozen-lockfile"]
 [phases.build]
 cmds = [
   "bun run build",
+  "bun build server/ws-relay.ts --outfile .next/standalone/ws-relay.js --target node",
   "cp -r public .next/standalone/public 2>/dev/null || true && cp -r .next/static .next/standalone/.next/static"
 ]
 
 [start]
-cmd = "NODE_TLS_REJECT_UNAUTHORIZED=0 node .next/standalone/server.js"
+cmd = "cd .next/standalone && NODE_TLS_REJECT_UNAUTHORIZED=0 node ws-relay.js & NODE_TLS_REJECT_UNAUTHORIZED=0 node server.js"
