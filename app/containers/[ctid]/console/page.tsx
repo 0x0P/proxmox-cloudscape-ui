@@ -99,7 +99,7 @@ export default function ContainerConsolePage() {
 
         if (cancelled) return;
 
-        const relayHost = window.location.hostname;
+        const relayHost = window.location.host;
         const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
         const wsParams = new URLSearchParams({
           node: resource.node,
@@ -109,7 +109,7 @@ export default function ContainerConsolePage() {
           vncTicket: consoleData.vncTicket,
           port: String(consoleData.port),
         });
-        const wsUrl = `${wsProtocol}://${relayHost}:${config.wsRelayPort}/?${wsParams.toString()}`;
+        const wsUrl = `${wsProtocol}://${relayHost}/ws?${wsParams.toString()}`;
 
         setSession({ wsUrl, vncPassword: consoleData.vncTicket });
       } catch (err) {
