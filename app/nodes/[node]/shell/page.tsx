@@ -80,6 +80,7 @@ export default function NodeShellPage() {
         if (cancelled) return;
 
         const relayHost = window.location.hostname;
+        const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
         const wsParams = new URLSearchParams({
           node,
           type: "shell",
@@ -87,7 +88,7 @@ export default function NodeShellPage() {
           vncTicket: consoleData.vncTicket,
           port: String(consoleData.port),
         });
-        const wsUrl = `ws://${relayHost}:${config.wsRelayPort}/?${wsParams.toString()}`;
+        const wsUrl = `${wsProtocol}://${relayHost}:${config.wsRelayPort}/?${wsParams.toString()}`;
 
         setSession({ wsUrl, vncPassword: consoleData.vncTicket });
       } catch (err) {
