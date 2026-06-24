@@ -44,7 +44,7 @@ wss.on("connection", (clientWs, req) => {
         `?port=${port}&vncticket=${encodeURIComponent(vncTicket)}`;
     }
 
-    const proxmoxWs = new WebSocket(proxmoxWsUrl, {
+    const proxmoxWs = new WebSocket(proxmoxWsUrl, ["binary"], {
       headers: { Cookie: `PVEAuthCookie=${authTicket}` },
       rejectUnauthorized: false,
       perMessageDeflate: false,
