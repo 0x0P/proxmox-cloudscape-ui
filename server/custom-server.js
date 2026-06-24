@@ -50,7 +50,6 @@ function handleWsConnection(clientWs, req) {
     const proxmoxWs = new WebSocket(proxmoxWsUrl, ["binary"], {
       headers: { Cookie: `PVEAuthCookie=${authTicket}` },
       rejectUnauthorized: false,
-      perMessageDeflate: false,
     });
 
     proxmoxWs.on("message", (data) => {
@@ -82,7 +81,7 @@ app.prepare().then(() => {
     handle(req, res);
   });
 
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+  const wss = new WebSocketServer({ noServer: true });
 
   wss.on("connection", handleWsConnection);
 
