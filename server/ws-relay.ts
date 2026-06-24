@@ -7,7 +7,7 @@ const WS_PORT = Number(process.env.WS_RELAY_PORT ?? "3001");
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const server = createServer();
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, perMessageDeflate: false });
 
 wss.on("connection", (clientWs, req) => {
   const url = new URL(req.url ?? "/", `http://localhost:${WS_PORT}`);
@@ -47,6 +47,7 @@ wss.on("connection", (clientWs, req) => {
     const proxmoxWs = new WebSocket(proxmoxWsUrl, {
       headers: { Cookie: `PVEAuthCookie=${authTicket}` },
       rejectUnauthorized: false,
+      perMessageDeflate: false,
     });
 
     proxmoxWs.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {

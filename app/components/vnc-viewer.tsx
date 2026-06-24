@@ -24,9 +24,9 @@ export default function VncViewer({ wsUrl, vncPassword, onConnect, onDisconnect 
     });
 
     rfb.scaleViewport = true;
-    rfb.resizeSession = true;
-    rfb.qualityLevel = 6;
-    rfb.compressionLevel = 2;
+    rfb.resizeSession = false;
+    rfb.qualityLevel = 5;
+    rfb.compressionLevel = 9;
 
     rfb.addEventListener("connect", onConnect);
     rfb.addEventListener("credentialsrequired", () => {

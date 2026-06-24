@@ -6,7 +6,8 @@ const next = require("next");
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const port = parseInt(process.env.PORT || "3000", 10);
-const app = next({ dev: false, hostname: "0.0.0.0", port });
+const dev = process.env.NODE_ENV !== "production";
+const app = next({ dev, hostname: "0.0.0.0", port });
 const handle = app.getRequestHandler();
 
 const PROXMOX_HOST = process.env.PROXMOX_HOST ?? "";
@@ -49,6 +50,7 @@ function handleWsConnection(clientWs, req) {
     const proxmoxWs = new WebSocket(proxmoxWsUrl, {
       headers: { Cookie: `PVEAuthCookie=${authTicket}` },
       rejectUnauthorized: false,
+      perMessageDeflate: false,
     });
 
     proxmoxWs.on("message", (data) => {
@@ -80,7 +82,7 @@ app.prepare().then(() => {
     handle(req, res);
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   wss.on("connection", handleWsConnection);
 

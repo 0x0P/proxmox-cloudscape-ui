@@ -12,6 +12,7 @@ import SpaceBetween from "@cloudscape-design/components/space-between";
 import Spinner from "@cloudscape-design/components/spinner";
 import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import { useTranslation } from "@/app/lib/use-translation";
+import { buildWsRelayUrl } from "@/app/lib/ws-relay-url";
 
 const VncViewer = dynamic(() => import("@/app/components/vnc-viewer"), { ssr: false });
 
@@ -98,8 +99,6 @@ export default function VmConsolePage() {
 
         if (cancelled) return;
 
-        const relayHost = window.location.host;
-        const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
         const wsParams = new URLSearchParams({
           node: resource.node,
           vmid: String(vmid),
@@ -108,7 +107,7 @@ export default function VmConsolePage() {
           vncTicket: consoleData.vncTicket,
           port: String(consoleData.port),
         });
-        const wsUrl = `${wsProtocol}://${relayHost}/ws?${wsParams.toString()}`;
+        const wsUrl = buildWsRelayUrl(window.location, wsParams, config.wsRelayPort);
 
         setSession({ wsUrl, vncPassword: consoleData.vncTicket });
       } catch (err) {
